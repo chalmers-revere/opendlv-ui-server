@@ -61,11 +61,20 @@ int32_t WebsocketServer::callbackHttp(struct lws *wsi, enum lws_callback_reasons
 
   int16_t *userId = static_cast<int16_t *>(user);
   if (reason == LWS_CALLBACK_HTTP) {
+
+    if (len < 1) {
+			lws_return_http_status(wsi, HTTP_STATUS_BAD_REQUEST, nullptr);
+			if (lws_http_transaction_completed(wsi)) {
+        return -1;
+      }
+    }
+
+    char buf[256];
+
     std::string page(static_cast<const char *>(in), len);
     std::map<std::string, std::string> cookies;
     
     // Extract cookies from the header, to find any sessionId.
-    char buf[256];
     if (lws_hdr_copy(wsi, buf, sizeof(buf), WSI_TOKEN_HTTP_COOKIE) > 0) {
       std::string cookiesStr(buf);
 
@@ -108,27 +117,33 @@ int32_t WebsocketServer::callbackHttp(struct lws *wsi, enum lws_callback_reasons
 
     std::shared_ptr<HttpRequest> httpRequest(new HttpRequest(getData, page));
     websocketServer->addHttpRequest(sessionId, httpRequest);
-    
-   // if (lws_hdr_copy(wsi, buf2, sizeof(buf2), WSI_TOKEN_POST_URI) > 0) {
-   //   lwsl_notice("Cookie: '%s'\n", buf2);
-   // }
 
-
-    // TODO: Should be after post data?
-    auto response = websocketServer->delegateRequestedHttp(sessionId);
-    std::string header;
-    if (response != nullptr) {
-      header = createHttpHeader(*response, sessionId);
-    } else {
-      header = createHttpHeaderNotFound();
+    // If POST URL, continue to accept data.
+    int32_t result;
+    if (lws_hdr_total_length(wsi, WSI_TOKEN_POST_URI)) {
+			result = lws_hdr_copy(wsi, buf, sizeof(buf), WSI_TOKEN_POST_URI);
+			if (result < 0) {
+				return -1;
+      }
+			return 0;
     }
+
+    auto response = websocketServer->delegateRequestedHttp(sessionId);
+    if (response == nullptr) {
+      lws_return_http_status(wsi, HTTP_STATUS_UNSUPPORTED_MEDIA_TYPE, "Unknown request");
+      return -1;
+    }
+
+    std::string header = createHttpHeader(*response, sessionId);;
 
     unsigned char *headerBuf = new unsigned char[header.length() + 1];
     strcpy((char *)headerBuf, header.c_str());
 
-    lws_write(wsi, headerBuf, header.length(), LWS_WRITE_HTTP_HEADERS);
-
+    result = lws_write(wsi, headerBuf, header.length(), LWS_WRITE_HTTP_HEADERS);
     free(headerBuf);
+    if (result < 0) {
+      return -1;
+    }
 
     lws_callback_on_writable(wsi);
 
@@ -142,8 +157,9 @@ int32_t WebsocketServer::callbackHttp(struct lws *wsi, enum lws_callback_reasons
     strcpy((char *)htmlBuf, html.c_str());
 
     lws_write(wsi, htmlBuf, html.length(), LWS_WRITE_HTTP);
-
     free(htmlBuf);
+
+    return -1;
 
   } else if (reason == LWS_CALLBACK_HTTP_BODY) {
     std::string request(static_cast<const char *>(in), len);

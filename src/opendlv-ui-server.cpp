@@ -47,8 +47,8 @@ int32_t main(int32_t argc, char **argv)
     auto httpRequestDelegate([&HTTP_ROOT](HttpRequest const &httpRequest, 
           std::shared_ptr<SessionData>) -> std::shared_ptr<HttpResponse>
         {
-          std::string page = httpRequest.getPage();
-          std::experimental::filesystem::path path{HTTP_ROOT + page};
+          std::string const PAGE = httpRequest.getPage();
+          std::experimental::filesystem::path path{HTTP_ROOT + PAGE};
 
           if (!std::experimental::filesystem::exists(path)) {
             std::cout << "ERROR: file '" << path.string() <<  "' not found." << std::endl;
@@ -62,6 +62,7 @@ int32_t main(int32_t argc, char **argv)
 
           std::string contentType;
           std::string const EXTENSION = path.extension();
+          std::cout << "DEBUG: page " << PAGE << " extension " << EXTENSION << std::endl;
           if (EXTENSION == ".html") {
             contentType = "text/html";
           } else if (EXTENSION == ".css") {
