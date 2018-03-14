@@ -30,10 +30,16 @@ class HttpRequest;
 class HttpResponse;
 class SessionData;
 
+struct ClientData {
+  std::unique_ptr<HttpRequest> httpRequest;
+  std::unique_ptr<HttpResponse> httpResponse;
+  uint16_t sessionId;
+};
+
 class WebsocketServer {
 
  public:
-  WebsocketServer(uint32_t, std::function<std::shared_ptr<HttpResponse>(
+  WebsocketServer(uint32_t, std::function<std::unique_ptr<HttpResponse>(
         HttpRequest const &, std::shared_ptr<SessionData>)>,
       std::function<void(std::string const &, uint32_t)>);
   WebsocketServer(WebsocketServer const &) = delete;
@@ -46,33 +52,27 @@ class WebsocketServer {
   void sendDataToAllClients(std::string);
 
  private:
-  void addHttpRequest(uint16_t, std::shared_ptr<HttpRequest>);
   void createSessionData(uint16_t);
   void delegateReceivedData(std::string const &, uint32_t) const;
-  std::shared_ptr<HttpResponse> delegateRequestedHttp(uint16_t);
+  std::unique_ptr<HttpResponse> delegateRequestedHttp(HttpRequest const &, uint16_t);
   std::vector<char unsigned> getOutputData() const;
-  std::string getResponseContent(uint16_t);
   uint32_t loginUser();
-  void setPostData(uint16_t, std::map<std::string, std::string>);
 
   static int32_t callbackHttp(struct lws *, enum lws_callback_reasons, void *, void *, size_t);
   static int32_t callbackData(struct lws *, enum lws_callback_reasons, void *, void *, size_t);
   static std::string createHttpHeader(HttpResponse const &, uint16_t);
-  static std::string createHttpHeaderNotFound();
   static std::vector<std::string> split(std::string const &, char);
 
   struct lws_protocols m_protocols[3] = {
-    {"http-only", &callbackHttp, 2, 0, 0, nullptr, 0},
+    {"http-only", &callbackHttp, 32, 0, 0, nullptr, 0},
     {"data", &callbackData, sizeof(int32_t), 1024, 0, nullptr, 0},
     {nullptr, nullptr, 0, 0, 0, nullptr, 0}
   };
 
   std::function<void(std::string const &, uint32_t)> m_dataReceiveDelegate;
-  std::function<std::shared_ptr<HttpResponse>(HttpRequest const &, 
+  std::function<std::unique_ptr<HttpResponse>(HttpRequest const &, 
       std::shared_ptr<SessionData>)> m_httpRequestDelegate;
 
-  std::map<uint16_t, std::shared_ptr<HttpRequest>> m_httpRequests;
-  std::map<uint16_t, std::shared_ptr<HttpResponse>> m_httpResponses;
   std::map<uint16_t, std::shared_ptr<SessionData>> m_sessionData;
   
   std::vector<char unsigned> m_outputData;

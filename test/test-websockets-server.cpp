@@ -33,7 +33,7 @@ TEST_CASE("Test websockets server start and simple connection with GET data.") {
 
   auto httpRequestDelegate([&REQUESTED_PAGE, &GET_KEY1, &GET_VALUE1, 
       &GET_KEY2, &GET_VALUE2](HttpRequest const &httpRequest,
-        std::shared_ptr<SessionData>) -> std::shared_ptr<HttpResponse>
+        std::shared_ptr<SessionData>) -> std::unique_ptr<HttpResponse>
       {
         REQUIRE(REQUESTED_PAGE == httpRequest.getPage()); 
 
@@ -42,7 +42,7 @@ TEST_CASE("Test websockets server start and simple connection with GET data.") {
         REQUIRE(getData[GET_KEY2] == GET_VALUE2);
         REQUIRE(getData.size() == 2);
 
-        std::shared_ptr<HttpResponse> httpResponse(new HttpResponse("text/plain", "hello world"));
+        std::unique_ptr<HttpResponse> httpResponse(new HttpResponse("text/plain", "hello world"));
         return httpResponse;
       });
  
@@ -73,7 +73,7 @@ TEST_CASE("Test websockets server start and nullptr return and no GET data.") {
   uint32_t PORT = 8000;
 
   auto httpRequestDelegate([](HttpRequest const &httpRequest,
-        std::shared_ptr<SessionData>) -> std::shared_ptr<HttpResponse>
+        std::shared_ptr<SessionData>) -> std::unique_ptr<HttpResponse>
       {
         REQUIRE(httpRequest.getGetData().size() == 0);
         return nullptr;

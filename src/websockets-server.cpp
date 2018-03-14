@@ -30,13 +30,11 @@
 #include "mustache.hpp"
 
 WebsocketServer::WebsocketServer(uint32_t port,
-    std::function<std::shared_ptr<HttpResponse>(HttpRequest const &, 
+    std::function<std::unique_ptr<HttpResponse>(HttpRequest const &, 
       std::shared_ptr<SessionData>)> httpRequestDelegate,
     std::function<void(std::string const &, uint32_t)> dataReceiveDelegate):
   m_dataReceiveDelegate{dataReceiveDelegate},
   m_httpRequestDelegate{httpRequestDelegate},
-  m_httpRequests{},
-  m_httpResponses{},
   m_sessionData{},
   m_outputData{},
   m_serverThread{nullptr},
@@ -59,7 +57,8 @@ int32_t WebsocketServer::callbackHttp(struct lws *wsi, enum lws_callback_reasons
   WebsocketServer *websocketServer = 
     reinterpret_cast<WebsocketServer *>(lws_context_user(lws_get_context(wsi)));
 
-  int16_t *userId = static_cast<int16_t *>(user);
+  ClientData *clientData = static_cast<ClientData *>(user);
+
   if (reason == LWS_CALLBACK_HTTP) {
 
     if (len < 1) {
@@ -101,8 +100,6 @@ int32_t WebsocketServer::callbackHttp(struct lws *wsi, enum lws_callback_reasons
       websocketServer->createSessionData(sessionId);
     }
     
-    *userId = sessionId;
-    
     // Extract GET data from the HTTP request.
     std::map<std::string, std::string> getData;
     uint32_t n = 0;
@@ -114,10 +111,11 @@ int32_t WebsocketServer::callbackHttp(struct lws *wsi, enum lws_callback_reasons
       }
       n++;
     }
-
-    std::shared_ptr<HttpRequest> httpRequest(new HttpRequest(getData, page));
-    websocketServer->addHttpRequest(sessionId, httpRequest);
-
+    
+    clientData->httpRequest = std::unique_ptr<HttpRequest>(
+        new HttpRequest(getData, page));
+    clientData->sessionId = sessionId;
+   
     // If POST URL, continue to accept data.
     int32_t result;
     if (lws_hdr_total_length(wsi, WSI_TOKEN_POST_URI)) {
@@ -128,19 +126,22 @@ int32_t WebsocketServer::callbackHttp(struct lws *wsi, enum lws_callback_reasons
 			return 0;
     }
 
-    auto response = websocketServer->delegateRequestedHttp(sessionId);
-    if (response == nullptr) {
+    clientData->httpResponse = std::move(
+        websocketServer->delegateRequestedHttp(
+          *clientData->httpRequest, sessionId));
+    if (clientData->httpResponse == nullptr) {
       lws_return_http_status(wsi, HTTP_STATUS_UNSUPPORTED_MEDIA_TYPE, "Unknown request");
       return -1;
     }
-
-    std::string header = createHttpHeader(*response, sessionId);;
+    
+    std::string header = createHttpHeader(*clientData->httpResponse, sessionId);
 
     unsigned char *headerBuf = new unsigned char[header.length() + 1];
     strcpy((char *)headerBuf, header.c_str());
 
     result = lws_write(wsi, headerBuf, header.length(), LWS_WRITE_HTTP_HEADERS);
-    free(headerBuf);
+    delete[] headerBuf;
+
     if (result < 0) {
       return -1;
     }
@@ -148,22 +149,31 @@ int32_t WebsocketServer::callbackHttp(struct lws *wsi, enum lws_callback_reasons
     lws_callback_on_writable(wsi);
 
   } else if (reason == LWS_CALLBACK_HTTP_WRITEABLE) {
-  
-    uint16_t sessionId = *userId; 
+    if (clientData->httpResponse == nullptr) {
+      std::cout << "It should not happen " << std::endl;
+      return 0;
+    }
 
-    std::string html = websocketServer->getResponseContent(sessionId) + "\n";
+    std::string content = clientData->httpResponse->getContent() + "\n";
     
-    unsigned char *htmlBuf = new unsigned char[html.length()];
-    strcpy((char *)htmlBuf, html.c_str());
+    unsigned char *contentBuf = new unsigned char[content.length() + 2];
+    strcpy((char *)contentBuf, content.c_str());
 
-    lws_write(wsi, htmlBuf, html.length(), LWS_WRITE_HTTP);
-    free(htmlBuf);
+    lws_write(wsi, contentBuf, content.length(), LWS_WRITE_HTTP);
+    delete[] contentBuf;
 
     return -1;
 
   } else if (reason == LWS_CALLBACK_HTTP_BODY) {
     std::string request(static_cast<const char *>(in), len);
     lwsl_notice("HTTP body: '%s'\n", request.c_str());
+  } else if (reason == LWS_CALLBACK_HTTP_DROP_PROTOCOL) {
+ /*   if (clientData->httpRequest != nullptr) {
+      delete clientData->httpRequest;
+    }
+    if (clientData->httpResponse != nullptr) {
+      delete clientData->httpResponse;
+    }*/
   } else if (reason == LWS_CALLBACK_HTTP_FILE_COMPLETION) {
     return -1;
   }
@@ -192,10 +202,6 @@ int32_t WebsocketServer::callbackData(struct lws *wsi, enum lws_callback_reasons
   return 0;
 }
 
-void WebsocketServer::addHttpRequest(uint16_t sessionId, std::shared_ptr<HttpRequest> httpRequest) {
-  m_httpRequests[sessionId] = httpRequest;
-}
-
 void WebsocketServer::createSessionData(uint16_t sessionId) {
   std::shared_ptr<SessionData> sessionData(new SessionData(sessionId));
   m_sessionData[sessionId] = sessionData;
@@ -207,14 +213,11 @@ void WebsocketServer::delegateReceivedData(std::string const &message, uint32_t 
   }
 }
 
-std::shared_ptr<HttpResponse> WebsocketServer::delegateRequestedHttp(
-    uint16_t sessionId) {
+std::unique_ptr<HttpResponse> WebsocketServer::delegateRequestedHttp(
+    HttpRequest const &request, uint16_t sessionId) {
   if (m_httpRequestDelegate != nullptr) {
-    auto response = m_httpRequestDelegate(*m_httpRequests[sessionId],
-        m_sessionData[sessionId]);
-
-    m_httpResponses[sessionId] = response;
-   
+    auto sessionData = m_sessionData[sessionId];
+    auto response = m_httpRequestDelegate(request, sessionData);
     return response;
   }
 
@@ -222,7 +225,7 @@ std::shared_ptr<HttpResponse> WebsocketServer::delegateRequestedHttp(
 }
 
 std::string WebsocketServer::createHttpHeader(HttpResponse const &response, uint16_t sessionId) {
- 
+
   std::string contentType = response.getContentType();
   int32_t contentLength = response.getContent().length();
 
@@ -249,33 +252,14 @@ set-cookie: sessionId={{session-id}})";
   return header;
 }
 
-std::string WebsocketServer::createHttpHeaderNotFound() {
-  std::string const header("HTTP/1.1 404 Not Found\ncontent-length: 0\ncache-control: no-store\n\n");
-  return header;
-}
-
 std::vector<char unsigned> WebsocketServer::getOutputData() const {
   return m_outputData;
-}
-
-std::string WebsocketServer::getResponseContent(uint16_t sessionId) {
-  auto response = m_httpResponses[sessionId];
-  if (response != nullptr) {
-    return response->getContent();
-  }
-
-  return "";
 }
 
 uint32_t WebsocketServer::loginUser() {
   std::lock_guard<std::mutex> guard(m_loginMutex);
   m_clientCount++;
   return m_clientCount;
-}
-
-void WebsocketServer::setPostData(uint16_t sessionId, 
-    std::map<std::string, std::string> postData) {
-  m_httpRequests[sessionId]->setPostData(postData);
 }
 
 void WebsocketServer::startServer() {
@@ -320,7 +304,7 @@ void WebsocketServer::sendDataToAllClients(std::string data) {
   if (m_context == nullptr) {
     return;
   }
-
+  
   m_outputData = std::vector<char unsigned>(LWS_PRE, ' ');
   std::copy(data.begin(), data.end(), std::back_inserter(m_outputData));
 

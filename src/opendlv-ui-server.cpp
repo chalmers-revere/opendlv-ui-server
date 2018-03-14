@@ -45,7 +45,7 @@ int32_t main(int32_t argc, char **argv)
     (void)VERBOSE;
 
     auto httpRequestDelegate([&HTTP_ROOT](HttpRequest const &httpRequest, 
-          std::shared_ptr<SessionData>) -> std::shared_ptr<HttpResponse>
+          std::shared_ptr<SessionData>) -> std::unique_ptr<HttpResponse>
         {
           std::string const PAGE = httpRequest.getPage();
           std::experimental::filesystem::path path{HTTP_ROOT + PAGE};
@@ -79,8 +79,7 @@ int32_t main(int32_t argc, char **argv)
             contentType = "text/plain";
           }
 
-          std::shared_ptr<HttpResponse> response(
-              new HttpResponse(contentType, content));
+          std::unique_ptr<HttpResponse> response(new HttpResponse(contentType, content));
           return response;
         });
     
