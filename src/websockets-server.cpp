@@ -29,7 +29,7 @@
 #include "websockets-server.hpp"
 #include "mustache.hpp"
 
-WebsocketServer::WebsocketServer(
+WebsocketServer::WebsocketServer(uint32_t port,
     std::function<std::shared_ptr<HttpResponse>(HttpRequest const &, 
       std::shared_ptr<SessionData>)> httpRequestDelegate,
     std::function<void(std::string const &, uint32_t)> dataReceiveDelegate):
@@ -46,6 +46,7 @@ WebsocketServer::WebsocketServer(
   m_websocketsMutex{},
   m_loginMutex{},
   m_clientCount{0},
+  m_port{port},
   m_serverIsRunning{false} {
 }
 
@@ -115,7 +116,12 @@ int32_t WebsocketServer::callbackHttp(struct lws *wsi, enum lws_callback_reasons
 
     // TODO: Should be after post data?
     auto response = websocketServer->delegateRequestedHttp(sessionId);
-    std::string header = createHttpHeader(*response, sessionId);
+    std::string header;
+    if (response != nullptr) {
+      header = createHttpHeader(*response, sessionId);
+    } else {
+      header = createHttpHeaderNotFound();
+    }
 
     unsigned char *headerBuf = new unsigned char[header.length() + 1];
     strcpy((char *)headerBuf, header.c_str());
@@ -130,7 +136,7 @@ int32_t WebsocketServer::callbackHttp(struct lws *wsi, enum lws_callback_reasons
   
     uint16_t sessionId = *userId; 
 
-    std::string html = websocketServer->getResponseHtml(sessionId) + "\n";
+    std::string html = websocketServer->getResponseContent(sessionId) + "\n";
     
     unsigned char *htmlBuf = new unsigned char[html.length()];
     strcpy((char *)htmlBuf, html.c_str());
@@ -202,7 +208,7 @@ std::shared_ptr<HttpResponse> WebsocketServer::delegateRequestedHttp(
 std::string WebsocketServer::createHttpHeader(HttpResponse const &response, uint16_t sessionId) {
  
   std::string contentType = response.getContentType();
-  int32_t contentLength = response.getHtml().length();
+  int32_t contentLength = response.getContent().length();
 
   char const *headerTemplate = 
 R"(HTTP/1.1 200 OK
@@ -227,12 +233,22 @@ set-cookie: sessionId={{session-id}})";
   return header;
 }
 
+std::string WebsocketServer::createHttpHeaderNotFound() {
+  std::string const header("HTTP/1.1 404 Not Found\ncontent-length: 0\ncache-control: no-store\n\n");
+  return header;
+}
+
 std::vector<char unsigned> WebsocketServer::getOutputData() const {
   return m_outputData;
 }
 
-std::string WebsocketServer::getResponseHtml(uint16_t sessionId) {
-  return m_httpResponses[sessionId]->getHtml();
+std::string WebsocketServer::getResponseContent(uint16_t sessionId) {
+  auto response = m_httpResponses[sessionId];
+  if (response != nullptr) {
+    return response->getContent();
+  }
+
+  return "";
 }
 
 uint32_t WebsocketServer::loginUser() {
@@ -262,7 +278,7 @@ void WebsocketServer::runServer() {
 
   struct lws_context_creation_info info;
   memset(&info, 0, sizeof(info));
-  info.port = 8000;
+  info.port = m_port;
   info.protocols = m_protocols;
   info.gid = -1;
   info.uid = -1;

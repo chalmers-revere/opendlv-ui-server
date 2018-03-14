@@ -17,9 +17,9 @@ cmake_minimum_required(VERSION 3.2)
 
 project(opendlv-ui-server)
 
-set(CLUON_COMPLETE cluon-complete-v0.0.51.hpp)
+set(CLUON_COMPLETE cluon-complete-v0.0.52.hpp)
 
-set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -s")
@@ -42,6 +42,7 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} \
     -Wmissing-field-initializers -Wmissing-format-attribute -Wmissing-include-dirs -Wmissing-noreturn")
 
 include(FindOpenSSL)
+find_package(Threads REQUIRED)
 find_package(Libwebsockets REQUIRED)
 
 add_custom_command(OUTPUT ${CMAKE_BINARY_DIR}/cluon-complete.hpp
@@ -56,7 +57,7 @@ include_directories(SYSTEM ${CMAKE_BINARY_DIR})
 include_directories(SYSTEM ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/src)
 
-set(LIBRARIES ${LIBRARIES} ${LIBWEBSOCKETS_LIBRARIES} ${OPENSSL_LIBRARIES})
+set(LIBRARIES ${LIBRARIES} ${LIBWEBSOCKETS_LIBRARIES} ${OPENSSL_LIBRARIES} Threads::Threads stdc++fs)
 
 add_library(${PROJECT_NAME}-core OBJECT ${CMAKE_BINARY_DIR}/cluon-complete.hpp 
   ${CMAKE_CURRENT_SOURCE_DIR}/src/websockets-server.cpp

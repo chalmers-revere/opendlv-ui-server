@@ -15,6 +15,8 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <experimental/filesystem>
+#include <fstream>
 #include <iostream>
 
 #include "cluon-complete.hpp"
@@ -27,63 +29,61 @@ int32_t main(int32_t argc, char **argv)
 {
   int32_t retCode{0};
   auto commandlineArguments = cluon::getCommandlineArguments(argc, argv);
-  if (0 == commandlineArguments.count("cid") || 0 == commandlineArguments.count("http-root")) {
+  if (0 == commandlineArguments.count("cid") || 0 == commandlineArguments.count("port") || 0 == commandlineArguments.count("http-root")) {
     std::cerr << argv[0] << " is the default HTTP/WebSocket server for OpenDLV user interfaces." << std::endl;
-    std::cerr << "Usage:   " << argv[0] << " --cid=<OpenDaVINCI session> --http-root=<folder where HTTP content can be found> [--id=<Identifier in case of multiple running instances>] [--verbose]" << std::endl;
-    std::cerr << "Example: " << argv[0] << " --cid=111 --http-root=./http" << std::endl;
+    std::cerr << "Usage:   " << argv[0] << " --cid=<OpenDaVINCI session> --port=<the port where HTTP/WebSocket is served> --http-root=<folder where HTTP content can be found> [--id=<Identifier in case of multiple running instances>] [--verbose]" << std::endl;
+    std::cerr << "Example: " << argv[0] << " --cid=111 --port=8000 --http-root=./http" << std::endl;
     retCode = 1;
   } else {
     uint32_t const ID{(commandlineArguments["id"].size() != 0) ? static_cast<uint32_t>(std::stoi(commandlineArguments["id"])) : 0};
     bool const VERBOSE{commandlineArguments.count("verbose") != 0};
 
+    uint32_t const HTTP_PORT = static_cast<uint32_t>(std::stoi(commandlineArguments["port"]));
+    std::string const HTTP_ROOT = commandlineArguments["http-root"];
+
     (void)ID;
     (void)VERBOSE;
 
-    auto httpRequestDelegate([](HttpRequest const &, 
+    auto httpRequestDelegate([&HTTP_ROOT](HttpRequest const &httpRequest, 
           std::shared_ptr<SessionData>) -> std::shared_ptr<HttpResponse>
         {
-        /*
-          std::cout << "Session ID: " << sessionId << std::endl;
-          std::cout << "Page: " << page << std::endl;
+          std::string page = httpRequest.getPage();
+          std::experimental::filesystem::path path{HTTP_ROOT + page};
 
-          std::cout << std::endl << "GET data" << std::endl;
-          for(auto e : getData) {
-            std::cout << e.first << " " << e.second << std::endl;
+          if (!std::experimental::filesystem::exists(path)) {
+            std::cout << "ERROR: file '" << path.string() <<  "' not found." << std::endl;
+            return nullptr;
           }
-                  
-          std::cout << std::endl << "POST data" << std::endl;
-          for(auto e : postData) {
-            std::cout << e.first << " " << e.second << std::endl;
+          
+          std::ifstream ifs(path.string());
+          std::stringstream ss;
+          ss << ifs.rdbuf();
+          std::string content = ss.str();
+
+          std::string contentType;
+          std::string const EXTENSION = path.extension();
+          if (EXTENSION == ".html") {
+            contentType = "text/html";
+          } else if (EXTENSION == ".css") {
+            contentType = "text/css";
+          } else if (EXTENSION == ".js") {
+            contentType = "text/javascript";
+          } else if (EXTENSION == ".gif") {
+            contentType = "image/gif";
+          } else if (EXTENSION == ".png") {
+            contentType = "image/png";
+          } else if (EXTENSION == ".jpeg" || EXTENSION == ".jpg") {
+            contentType = "image/jpeg";
+          } else {
+            contentType = "text/plain";
           }
-        
-          std::cout << std::endl << "Session data" << std::endl;
-          for(auto e : sessionData) {
-            std::cout << e.first << " " << e.second << std::endl;
-          }
-          */
-        
-          std::string contentType = "text/html";
-
-          char const *html = 
-R"(<!DOCTYPE html>
-<html>
-<head>
-<meta charset="UTF-8">
-  <title>Test page</title>
-</head>
-
-<body>
-  Some nice content.
-</body>
-
-</html>)";
 
           std::shared_ptr<HttpResponse> response(
-              new HttpResponse(contentType, std::string(html)));
+              new HttpResponse(contentType, content));
           return response;
         });
     
-    WebsocketServer ws(httpRequestDelegate, nullptr);
+    WebsocketServer ws(HTTP_PORT, httpRequestDelegate, nullptr);
     ws.startServer();
 
     uint16_t const CID = static_cast<uint16_t>(

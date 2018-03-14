@@ -17,9 +17,9 @@
 
 #include "http-response.hpp"
 
-HttpResponse::HttpResponse(std::string const &contentType, std::string const &html):
+HttpResponse::HttpResponse(std::string const &contentType, std::string const &content):
   m_contentType(contentType),
-  m_html(html)
+  m_content(content)
 {
 }
 
@@ -30,6 +30,6 @@ std::string HttpResponse::getContentType() const {
   return m_contentType;
 }
 
-std::string HttpResponse::getHtml() const {
-  return m_html;
+std::string HttpResponse::getContent() const {
+  return m_content;
 }

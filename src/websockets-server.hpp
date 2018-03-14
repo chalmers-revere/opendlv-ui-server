@@ -33,7 +33,7 @@ class SessionData;
 class WebsocketServer {
 
  public:
-  WebsocketServer(std::function<std::shared_ptr<HttpResponse>(
+  WebsocketServer(uint32_t, std::function<std::shared_ptr<HttpResponse>(
         HttpRequest const &, std::shared_ptr<SessionData>)>,
       std::function<void(std::string const &, uint32_t)>);
   WebsocketServer(WebsocketServer const &) = delete;
@@ -51,13 +51,14 @@ class WebsocketServer {
   void delegateReceivedData(std::string const &, uint32_t) const;
   std::shared_ptr<HttpResponse> delegateRequestedHttp(uint16_t);
   std::vector<char unsigned> getOutputData() const;
-  std::string getResponseHtml(uint16_t);
+  std::string getResponseContent(uint16_t);
   uint32_t loginUser();
   void setPostData(uint16_t, std::map<std::string, std::string>);
 
   static int32_t callbackHttp(struct lws *, enum lws_callback_reasons, void *, void *, size_t);
   static int32_t callbackData(struct lws *, enum lws_callback_reasons, void *, void *, size_t);
   static std::string createHttpHeader(HttpResponse const &, uint16_t);
+  static std::string createHttpHeaderNotFound();
   static std::vector<std::string> split(std::string const &, char);
 
   struct lws_protocols m_protocols[3] = {
@@ -83,6 +84,7 @@ class WebsocketServer {
   std::mutex m_loginMutex;
 
   uint32_t m_clientCount;
+  uint32_t m_port;
   bool m_serverIsRunning;
 };
 

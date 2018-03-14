@@ -29,11 +29,11 @@ class HttpResponse {
   HttpResponse &operator=(HttpResponse const &) = delete;
   ~HttpResponse();
   std::string getContentType() const;
-  std::string getHtml() const;
+  std::string getContent() const;
 
  private:
   std::string m_contentType;
-  std::string m_html;
+  std::string m_content;
 };
 
 #endif

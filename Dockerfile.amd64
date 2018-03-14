@@ -43,7 +43,7 @@ RUN apk update && \
         openssl
 
 WORKDIR /usr/bin
-COPY --from=builder /tmp/opendlv-ui-server-dest/ /usr/
+COPY --from=builder /tmp/opendlv-ui-server-dest /usr
 CMD ["/usr/bin/opendlv-ui-server"]
 
 
