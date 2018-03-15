@@ -37,27 +37,35 @@ WebsocketServer::WebsocketServer(uint32_t port,
   m_httpRequestDelegate{httpRequestDelegate},
   m_sessionData{},
   m_outputData{},
-  m_serverThread{nullptr},
   m_context{nullptr, [](struct lws_context *context) {
     lws_context_destroy(context);
   }},
-  m_websocketsMutex{},
-  m_loginMutex{},
-  m_outputDataMutex{},
   m_clientCount{0},
-  m_port{port},
-  m_serverIsRunning{false} {
+  m_port{port}
+{
+  struct lws_context_creation_info info;
+  memset(&info, 0, sizeof(info));
+  info.port = m_port;
+  info.protocols = m_protocols;
+  info.gid = -1;
+  info.uid = -1;
+  info.user = static_cast<void *>(this);
+  
+  {
+    m_context.reset(lws_create_context(&info));
+  }
+
+  lws_set_log_level(7, nullptr);
 }
 
 WebsocketServer::~WebsocketServer() {
-  stopServer();
 }
 
 int32_t WebsocketServer::callbackHttp(struct lws *wsi, enum lws_callback_reasons reason, void *user, void *in, size_t len) {
 
   WebsocketServer *websocketServer = 
     reinterpret_cast<WebsocketServer *>(lws_context_user(lws_get_context(wsi)));
-
+  
   ClientData *clientData = static_cast<ClientData *>(user);
 
   if (reason == LWS_CALLBACK_HTTP) {
@@ -182,26 +190,20 @@ int32_t WebsocketServer::callbackData(struct lws *wsi, enum lws_callback_reasons
   WebsocketServer *websocketServer =
       reinterpret_cast<WebsocketServer *>(lws_context_user(lws_get_context(wsi)));
     
-  std::cout << "REASON " << reason << std::endl;
-
   int32_t *userId = static_cast<int32_t *>(user);
   if (reason == LWS_CALLBACK_ESTABLISHED) {
     *userId = websocketServer->loginUser();
     
-    std::cout << "logged on " << *userId << std::endl;
-
   } else if (reason == LWS_CALLBACK_RECEIVE) {
     std::string data(static_cast<const char *>(in), len);
     websocketServer->delegateReceivedData(data, *userId);
   } else if (reason == LWS_CALLBACK_SERVER_WRITEABLE) {
     auto data = websocketServer->getOutputData();
 
-    std::cout << "data to send: " << data << std::endl;
-
     unsigned char *dataBuf = new unsigned char[data.length() + LWS_PRE + 1];
     strcpy((char *)dataBuf + LWS_PRE, data.c_str());
 
-    lws_write(wsi, &dataBuf[LWS_PRE], data.length(), LWS_WRITE_HTTP);
+    lws_write(wsi, &dataBuf[LWS_PRE], data.length(), LWS_WRITE_BINARY);
     delete[] dataBuf;
   }
   
@@ -259,48 +261,16 @@ set-cookie: sessionId={{session-id}})";
 }
 
 std::string WebsocketServer::getOutputData() {
-  std::lock_guard<std::mutex> guard(m_outputDataMutex);
   return m_outputData;
 }
 
 uint32_t WebsocketServer::loginUser() {
-  std::lock_guard<std::mutex> guard(m_loginMutex);
   m_clientCount++;
   return m_clientCount;
 }
 
-void WebsocketServer::startServer() {
-  m_serverThread.reset(new std::thread(&WebsocketServer::runServer, this));
-}
-
-void WebsocketServer::stopServer() {
-  std::lock_guard<std::mutex> guard(m_websocketsMutex);
-  m_serverIsRunning = false;
-  m_serverThread->join();
-}
-
-void WebsocketServer::runServer() {
-
-  m_serverIsRunning = true;
-
-  struct lws_context_creation_info info;
-  memset(&info, 0, sizeof(info));
-  info.port = m_port;
-  info.protocols = m_protocols;
-  info.gid = -1;
-  info.uid = -1;
-  info.user = static_cast<void *>(this);
-  
-  {
-    std::lock_guard<std::mutex> guard(m_websocketsMutex);
-    m_context.reset(lws_create_context(&info));
-  }
-
-  lws_set_log_level(7, nullptr);
-
-  while (m_serverIsRunning) {
-    lws_service(&(*m_context), 10000);
-  }
+void WebsocketServer::stepServer() {
+  lws_service(&(*m_context), 10000);
 }
 
 void WebsocketServer::setDataReceiveDelegate(
@@ -313,16 +283,14 @@ void WebsocketServer::sendDataToAllClients(std::string data) {
   if (m_context == nullptr) {
     return;
   } else {
-    std::lock_guard<std::mutex> guard(m_outputDataMutex);
     m_outputData = data;
   }
 
   {
-    std::lock_guard<std::mutex> guard(m_websocketsMutex);
     if (m_context == nullptr) {
       return;
     }
-  //  lws_cancel_service(&(*m_context));
+    lws_cancel_service(&(*m_context));
     lws_callback_on_writable_all_protocol(&(*m_context), &m_protocols[1]);
   }
 }

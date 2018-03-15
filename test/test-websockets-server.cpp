@@ -47,9 +47,6 @@ TEST_CASE("Test websockets server start and simple connection with GET data.") {
       });
  
   WebsocketServer ws(PORT, httpRequestDelegate, nullptr);
-  ws.startServer();
-
-  std::this_thread::sleep_for(std::chrono::seconds(1));
 
   bool gotResponse = false;
   auto clientReceiveDelegate([&gotResponse](std::string &&, std::chrono::system_clock::time_point &&) noexcept
@@ -63,7 +60,9 @@ TEST_CASE("Test websockets server start and simple connection with GET data.") {
   cluon::TCPConnection connection("127.0.0.1", PORT, clientReceiveDelegate, connectionLostDelegate);
   connection.send(std::move("GET /" + REQUESTED_PAGE + "?" + GET_KEY1 + "=" + GET_VALUE1 + "&" + GET_KEY2 + "=" + GET_VALUE2 + " HTTP/1.1\r\nHost: localhost\r\n\r\n"));
 
-  std::this_thread::sleep_for(std::chrono::seconds(1));
+  while (!gotResponse) {
+    ws.stepServer();
+  }
   
   REQUIRE(gotResponse);
 }
@@ -80,9 +79,6 @@ TEST_CASE("Test websockets server start and nullptr return and no GET data.") {
       });
  
   WebsocketServer ws(PORT, httpRequestDelegate, nullptr);
-  ws.startServer();
-
-  std::this_thread::sleep_for(std::chrono::seconds(1));
 
   bool gotResponse = false;
   auto clientReceiveDelegate([&gotResponse](std::string &&, std::chrono::system_clock::time_point &&) noexcept
@@ -96,7 +92,9 @@ TEST_CASE("Test websockets server start and nullptr return and no GET data.") {
   cluon::TCPConnection connection("127.0.0.1", PORT, clientReceiveDelegate, connectionLostDelegate);
   connection.send(std::move("GET /" + REQUESTED_PAGE + " HTTP/1.1\r\nHost: localhost\r\n\r\n"));
 
-  std::this_thread::sleep_for(std::chrono::seconds(1));
+  while (!gotResponse) {
+    ws.stepServer();
+  }
   
   REQUIRE(gotResponse);
 }

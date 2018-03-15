@@ -45,10 +45,8 @@ class WebsocketServer {
   WebsocketServer(WebsocketServer const &) = delete;
   WebsocketServer &operator=(WebsocketServer const &) = delete;
   ~WebsocketServer();
-  void runServer();
+  void stepServer();
   void setDataReceiveDelegate(std::function<void(std::string const &, uint32_t)>);
-  void startServer();
-  void stopServer();
   void sendDataToAllClients(std::string);
 
  private:
@@ -74,19 +72,10 @@ class WebsocketServer {
       std::shared_ptr<SessionData>)> m_httpRequestDelegate;
 
   std::map<uint16_t, std::shared_ptr<SessionData>> m_sessionData;
-  
   std::string m_outputData;
-
-  std::unique_ptr<std::thread> m_serverThread;
   std::unique_ptr<struct lws_context, void(*)(struct lws_context *)> m_context;
-  
-  std::mutex m_websocketsMutex;
-  std::mutex m_loginMutex;
-  std::mutex m_outputDataMutex;
-
   uint32_t m_clientCount;
   uint32_t m_port;
-  bool m_serverIsRunning;
 };
 
 #endif

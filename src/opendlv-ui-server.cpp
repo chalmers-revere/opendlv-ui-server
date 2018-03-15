@@ -62,7 +62,6 @@ int32_t main(int32_t argc, char **argv)
 
           std::string contentType;
           std::string const EXTENSION = path.extension();
-          std::cout << "DEBUG: page " << PAGE << " extension " << EXTENSION << std::endl;
           if (EXTENSION == ".html") {
             contentType = "text/html";
           } else if (EXTENSION == ".css") {
@@ -84,7 +83,6 @@ int32_t main(int32_t argc, char **argv)
         });
     
     WebsocketServer ws(HTTP_PORT, httpRequestDelegate, nullptr);
-    ws.startServer();
 
     uint16_t const CID = static_cast<uint16_t>(
         std::stoi(commandlineArguments["cid"]));
@@ -103,7 +101,7 @@ int32_t main(int32_t argc, char **argv)
     ws.setDataReceiveDelegate(dataReceivedDelegate);
 
     while (od4.isRunning()) {
-      std::this_thread::sleep_for(std::chrono::seconds(1));
+      ws.stepServer();
     }
   }
   return retCode;
