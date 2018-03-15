@@ -55,7 +55,7 @@ class WebsocketServer {
   void createSessionData(uint16_t);
   void delegateReceivedData(std::string const &, uint32_t) const;
   std::unique_ptr<HttpResponse> delegateRequestedHttp(HttpRequest const &, uint16_t);
-  std::vector<char unsigned> getOutputData() const;
+  std::string getOutputData();
   uint32_t loginUser();
 
   static int32_t callbackHttp(struct lws *, enum lws_callback_reasons, void *, void *, size_t);
@@ -75,13 +75,14 @@ class WebsocketServer {
 
   std::map<uint16_t, std::shared_ptr<SessionData>> m_sessionData;
   
-  std::vector<char unsigned> m_outputData;
+  std::string m_outputData;
 
   std::unique_ptr<std::thread> m_serverThread;
   std::unique_ptr<struct lws_context, void(*)(struct lws_context *)> m_context;
   
   std::mutex m_websocketsMutex;
   std::mutex m_loginMutex;
+  std::mutex m_outputDataMutex;
 
   uint32_t m_clientCount;
   uint32_t m_port;

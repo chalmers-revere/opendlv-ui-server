@@ -25,7 +25,7 @@ RUN apk update && \
         openssl-dev
         
 # The Alpine libwebsockets does not work (it needs openssl 1.1 apparently). Let's compile it.
-RUN cd /tmp && wget https://github.com/warmcat/libwebsockets/archive/v2.4.1.tar.gz && tar -zxvf v2.4.1.tar.gz && cd libwebsockets-2.4.1 && mkdir build && cd build && cmake .. && make && make install
+RUN cd /tmp && wget https://github.com/warmcat/libwebsockets/archive/v2.4.1.tar.gz && tar -zxvf v2.4.1.tar.gz && cd libwebsockets-2.4.1 && mkdir build && cd build && cmake -DCMAKE_BUILD_TYPE=DEBUG .. && make && make install
         
 ADD . /opt/sources
 WORKDIR /opt/sources

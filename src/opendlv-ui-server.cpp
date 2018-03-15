@@ -89,11 +89,8 @@ int32_t main(int32_t argc, char **argv)
     uint16_t const CID = static_cast<uint16_t>(
         std::stoi(commandlineArguments["cid"]));
     auto onIncomingEnvelope([&ws](cluon::data::Envelope &&envelope) {
-        auto gm = cluon::extractMessage<cluon::GenericMessage>(std::move(envelope));
-        cluon::ToProtoVisitor protoEncoder;
-        gm.accept(protoEncoder);
-
-        ws.sendDataToAllClients(protoEncoder.encodedData());
+        std::string data = cluon::serializeEnvelope(std::move(envelope));
+        ws.sendDataToAllClients(data);
       });
     
     cluon::OD4Session od4{CID, onIncomingEnvelope};
