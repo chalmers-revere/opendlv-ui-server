@@ -40,6 +40,7 @@ WebsocketServer::WebsocketServer(uint32_t port,
   m_context{nullptr, [](struct lws_context *context) {
     lws_context_destroy(context);
   }},
+  m_outputDataMutex{},
   m_clientCount{0},
   m_port{port}
 {
@@ -200,9 +201,8 @@ int32_t WebsocketServer::callbackData(struct lws *wsi, enum lws_callback_reasons
   } else if (reason == LWS_CALLBACK_SERVER_WRITEABLE) {
     auto data = websocketServer->getOutputData();
 
-    unsigned char *dataBuf = new unsigned char[data.length() + LWS_PRE + 1];
-    strcpy((char *)dataBuf + LWS_PRE, data.c_str());
-
+    unsigned char *dataBuf = new unsigned char[data.length() + LWS_PRE];
+    memcpy(dataBuf + LWS_PRE, data.c_str(), data.size());
     lws_write(wsi, &dataBuf[LWS_PRE], data.length(), LWS_WRITE_BINARY);
     delete[] dataBuf;
   }
@@ -261,6 +261,7 @@ set-cookie: sessionId={{session-id}})";
 }
 
 std::string WebsocketServer::getOutputData() {
+  std::lock_guard<std::mutex> guard(m_outputDataMutex);
   return m_outputData;
 }
 
@@ -283,6 +284,7 @@ void WebsocketServer::sendDataToAllClients(std::string data) {
   if (m_context == nullptr) {
     return;
   } else {
+    std::lock_guard<std::mutex> guard(m_outputDataMutex);
     m_outputData = data;
   }
 

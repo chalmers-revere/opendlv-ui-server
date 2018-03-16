@@ -74,6 +74,7 @@ class WebsocketServer {
   std::map<uint16_t, std::shared_ptr<SessionData>> m_sessionData;
   std::string m_outputData;
   std::unique_ptr<struct lws_context, void(*)(struct lws_context *)> m_context;
+  std::mutex m_outputDataMutex;
   uint32_t m_clientCount;
   uint32_t m_port;
 };
