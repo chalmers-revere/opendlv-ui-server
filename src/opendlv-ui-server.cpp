@@ -37,6 +37,7 @@ int32_t main(int32_t argc, char **argv)
   } else {
     uint32_t const ID{(commandlineArguments["id"].size() != 0) ? static_cast<uint32_t>(std::stoi(commandlineArguments["id"])) : 0};
     bool const VERBOSE{commandlineArguments.count("verbose") != 0};
+    uint16_t const CID = static_cast<uint16_t>(std::stoi(commandlineArguments["cid"]));
 
     uint32_t const HTTP_PORT = static_cast<uint32_t>(std::stoi(commandlineArguments["port"]));
     std::string const HTTP_ROOT = commandlineArguments["http-root"];
@@ -47,7 +48,7 @@ int32_t main(int32_t argc, char **argv)
     auto httpRequestDelegate([&HTTP_ROOT](HttpRequest const &httpRequest, 
           std::shared_ptr<SessionData>) -> std::unique_ptr<HttpResponse>
         {
-          std::string const PAGE = httpRequest.getPage();
+          std::string const PAGE = (httpRequest.getPage() != "/") ? httpRequest.getPage() : std::string("/index.html");
           std::experimental::filesystem::path path{HTTP_ROOT + PAGE};
 
           if (!std::experimental::filesystem::exists(path)) {
@@ -81,23 +82,16 @@ int32_t main(int32_t argc, char **argv)
           std::unique_ptr<HttpResponse> response(new HttpResponse(contentType, content));
           return response;
         });
-    
     WebsocketServer ws(HTTP_PORT, httpRequestDelegate, nullptr);
 
-    uint16_t const CID = static_cast<uint16_t>(
-        std::stoi(commandlineArguments["cid"]));
     auto onIncomingEnvelope([&ws](cluon::data::Envelope &&envelope) {
         std::string data = cluon::serializeEnvelope(std::move(envelope));
         ws.sendDataToAllClients(data);
-      });
-    
+      });    
     cluon::OD4Session od4{CID, onIncomingEnvelope};
 
-    auto dataReceivedDelegate([](std::string const &message, uint32_t senderId) {
-        std::cout << "Got message '" << message << "' from " << senderId 
-          << std::endl;
+    auto dataReceivedDelegate([](std::string const &/*message*/, uint32_t /*senderId*/) {
         });
-    
     ws.setDataReceiveDelegate(dataReceivedDelegate);
 
     while (od4.isRunning()) {
