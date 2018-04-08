@@ -17,7 +17,7 @@ cmake_minimum_required(VERSION 3.2)
 
 project(opendlv-ui-server)
 
-set(CLUON_COMPLETE cluon-complete-v0.0.63.hpp)
+set(CLUON_COMPLETE cluon-complete-v0.0.65.hpp)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -48,7 +48,7 @@ find_package(Libwebsockets REQUIRED)
 add_custom_command(OUTPUT ${CMAKE_BINARY_DIR}/cluon-complete.hpp
     COMMAND ${CMAKE_COMMAND} -E create_symlink ${CMAKE_CURRENT_SOURCE_DIR}/src/${CLUON_COMPLETE} ${CMAKE_BINARY_DIR}/cluon-complete.hpp
     DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/${CLUON_COMPLETE})
-    
+
 add_custom_target(create-cluon-symlink ${CMAKE_BINARY_DIR}/cluon-complete.hpp)
 
 include_directories(${LIBWEBSOCKETS_INCLUDE_DIRS})
@@ -59,7 +59,8 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/src)
 
 set(LIBRARIES ${LIBRARIES} ${LIBWEBSOCKETS_LIBRARIES} ${OPENSSL_LIBRARIES} Threads::Threads stdc++fs)
 
-add_library(${PROJECT_NAME}-core OBJECT ${CMAKE_BINARY_DIR}/cluon-complete.hpp 
+add_library(${PROJECT_NAME}-core OBJECT 
+  ${CMAKE_BINARY_DIR}/cluon-complete.hpp
   ${CMAKE_CURRENT_SOURCE_DIR}/src/websockets-server.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/src/http-request.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/src/http-response.cpp

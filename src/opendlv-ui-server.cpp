@@ -18,6 +18,7 @@
 #include <experimental/filesystem>
 #include <fstream>
 #include <iostream>
+#include <sstream>
 
 #include "cluon-complete.hpp"
 #include "http-request.hpp"
@@ -90,8 +91,18 @@ int32_t main(int32_t argc, char **argv)
       });    
     cluon::OD4Session od4{CID, onIncomingEnvelope};
 
-    auto dataReceivedDelegate([](std::string const &/*message*/, uint32_t /*senderId*/) {
-        });
+    auto dataReceivedDelegate([&od4](std::string const &message, uint32_t /*httpClientId*/) {
+        std::stringstream sstr(message);
+        while (sstr.good()) {
+          auto tmp{cluon::extractEnvelope(sstr)};
+          if (tmp.first) {
+            cluon::data::Envelope env{tmp.second};
+            env.sent(cluon::time::now());
+            env.sampleTimeStamp(cluon::time::now());
+            od4.send(std::move(env));
+          }
+        }
+      });
     ws.setDataReceiveDelegate(dataReceivedDelegate);
 
     while (od4.isRunning()) {
