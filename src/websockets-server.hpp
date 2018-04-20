@@ -63,7 +63,7 @@ class WebsocketServer {
 
   struct lws_protocols m_protocols[3] = {
     {"http-only", &callbackHttp, 32, 0, 0, nullptr, 0},
-    {"odvd", &callbackData, sizeof(int32_t), 1024, 0, nullptr, 0},
+    {"od4", &callbackData, sizeof(int32_t), 1024, 0, nullptr, 0},
     {nullptr, nullptr, 0, 0, 0, nullptr, 0}
   };
 
