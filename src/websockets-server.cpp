@@ -280,18 +280,22 @@ void WebsocketServer::sendDataToAllClients(std::string data) {
 
   if (m_context == nullptr) {
     return;
-  } else {
+  }
+  
+  uint32_t const LEN = data.length() + 1;
+  uint32_t const LIMIT = m_protocols[1].tx_packet_size;
+  if (LEN > LIMIT) {
+    std::cerr << "Trying to send to much data (" << LEN << " > " << LIMIT << "). Chunked messages are expensive and not supported." << std::endl;
+    return;
+  }
+  
+  {
     std::lock_guard<std::mutex> guard(m_outputDataMutex);
     m_outputData = data;
   }
 
-  {
-    if (m_context == nullptr) {
-      return;
-    }
-    lws_cancel_service(&(*m_context));
-    lws_callback_on_writable_all_protocol(&(*m_context), &m_protocols[1]);
-  }
+  lws_cancel_service(&(*m_context));
+  lws_callback_on_writable_all_protocol(&(*m_context), &m_protocols[1]);
 }
   
 std::vector<std::string> WebsocketServer::split(std::string const &text, char delimiter) {
