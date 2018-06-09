@@ -17,7 +17,7 @@ cmake_minimum_required(VERSION 3.2)
 
 project(opendlv-ui-server)
 
-set(CLUON_COMPLETE cluon-complete-v0.0.97.hpp)
+set(CLUON_COMPLETE cluon-complete-v0.0.99.hpp)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -79,4 +79,4 @@ add_test(NAME ${PROJECT_NAME}-runner COMMAND ${PROJECT_NAME}-runner)
 
 install(TARGETS ${PROJECT_NAME} RUNTIME DESTINATION bin COMPONENT ${PROJECT_NAME})
 install(TARGETS ${PROJECT_NAME}-static DESTINATION lib COMPONENT ${CMAKE_PROJECT_NAME})
-install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/src/websockets-server.hpp DESTINATION include/${PROJECT_NAME} COMPONENT ${CMAKE_PROJECT_NAME})
+install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/src/http-request.hpp ${CMAKE_CURRENT_SOURCE_DIR}/src/http-response.hpp ${CMAKE_CURRENT_SOURCE_DIR}/src/session-data.hpp ${CMAKE_CURRENT_SOURCE_DIR}/src/websockets-server.hpp DESTINATION include/${PROJECT_NAME} COMPONENT ${CMAKE_PROJECT_NAME})

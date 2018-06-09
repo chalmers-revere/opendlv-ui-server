@@ -85,9 +85,12 @@ int32_t main(int32_t argc, char **argv)
         });
     WebsocketServer ws(HTTP_PORT, httpRequestDelegate, nullptr);
 
-    auto onIncomingEnvelope([&ws](cluon::data::Envelope &&envelope) {
+    auto onIncomingEnvelope([&ws, &VERBOSE](cluon::data::Envelope &&envelope) {
         std::string data = cluon::serializeEnvelope(std::move(envelope));
         ws.sendDataToAllClients(data);
+        if (VERBOSE) {
+          std::cout << "Sending message " << envelope.dataType() << " (" << data.size() << " bytes) to all websocket clients." << std::endl;
+        }
       });    
     cluon::OD4Session od4{CID, onIncomingEnvelope};
 
