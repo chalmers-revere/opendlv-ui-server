@@ -41,6 +41,7 @@ WebsocketServer::WebsocketServer(uint32_t port,
     lws_context_destroy(context);
   }},
   m_outputDataMutex{},
+  m_outputDataBuffer{},
   m_clientCount{0},
   m_port{port}
 {
@@ -51,7 +52,10 @@ WebsocketServer::WebsocketServer(uint32_t port,
   info.gid = -1;
   info.uid = -1;
   info.user = static_cast<void *>(this);
-  
+ 
+  uint32_t const MAX_TX_LENGTH = m_protocols[1].tx_packet_size;
+  m_outputDataBuffer = new unsigned char[MAX_TX_LENGTH + LWS_PRE];
+
   {
     m_context.reset(lws_create_context(&info));
   }
@@ -60,6 +64,7 @@ WebsocketServer::WebsocketServer(uint32_t port,
 }
 
 WebsocketServer::~WebsocketServer() {
+    delete[] m_outputDataBuffer;
 }
 
 int32_t WebsocketServer::callbackHttp(struct lws *wsi, enum lws_callback_reasons reason, void *user, void *in, size_t len) {
@@ -144,12 +149,11 @@ int32_t WebsocketServer::callbackHttp(struct lws *wsi, enum lws_callback_reasons
       return -1;
     }
     
-    std::string header = createHttpHeader(*clientData->httpResponse, sessionId);
-
-    unsigned char *headerBuf = new unsigned char[header.length() + 1];
-    strcpy((char *)headerBuf, header.c_str());
-
-    result = lws_write(wsi, headerBuf, header.length(), LWS_WRITE_HTTP_HEADERS);
+    std::string const HEADER = createHttpHeader(*clientData->httpResponse, sessionId);
+    uint32_t LEN = HEADER.length();
+    unsigned char *headerBuf = new unsigned char[LEN];
+    memcpy(headerBuf, HEADER.c_str(), LEN);
+    result = lws_write(wsi, headerBuf, LEN, LWS_WRITE_HTTP_HEADERS);
     delete[] headerBuf;
 
     if (result < 0) {
@@ -196,12 +200,8 @@ int32_t WebsocketServer::callbackData(struct lws *wsi, enum lws_callback_reasons
     std::string data(static_cast<const char *>(in), len);
     websocketServer->delegateReceivedData(data, *userId);
   } else if (reason == LWS_CALLBACK_SERVER_WRITEABLE) {
-    auto data = websocketServer->getOutputData();
-
-    unsigned char *dataBuf = new unsigned char[data.length() + LWS_PRE];
-    memcpy(dataBuf + LWS_PRE, data.c_str(), data.size());
-    lws_write(wsi, &dataBuf[LWS_PRE], data.length(), LWS_WRITE_BINARY);
-    delete[] dataBuf;
+    std::pair<unsigned char *, size_t> buffer = websocketServer->getOutputDataBuffer();
+    lws_write(wsi, &buffer.first[LWS_PRE], buffer.second, LWS_WRITE_BINARY);
   }
   
   return 0;
@@ -257,9 +257,11 @@ set-cookie: sessionId={{session-id}})";
   return header;
 }
 
-std::string WebsocketServer::getOutputData() {
+std::pair<unsigned char *, size_t> WebsocketServer::getOutputDataBuffer() {
   std::lock_guard<std::mutex> guard(m_outputDataMutex);
-  return m_outputData;
+  size_t const LEN =  m_outputData.length();
+  memcpy(m_outputDataBuffer + LWS_PRE, m_outputData.c_str(), LEN);
+  return std::pair<unsigned char *, size_t>{m_outputDataBuffer, LEN};
 }
 
 uint32_t WebsocketServer::loginUser() {
