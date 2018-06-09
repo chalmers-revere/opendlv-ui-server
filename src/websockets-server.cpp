@@ -159,16 +159,13 @@ int32_t WebsocketServer::callbackHttp(struct lws *wsi, enum lws_callback_reasons
     lws_callback_on_writable(wsi);
 
   } else if (reason == LWS_CALLBACK_HTTP_WRITEABLE) {
-    std::string content = clientData->httpResponse->getContent() + "\n";
-    
-    unsigned char *contentBuf = new unsigned char[content.length() + 2];
-    strcpy((char *)contentBuf, content.c_str());
-
-    lws_write(wsi, contentBuf, content.length(), LWS_WRITE_HTTP);
+    std::string const CONTENT = clientData->httpResponse->getContent() + "\n";
+    uint32_t const LEN = CONTENT.length();
+    unsigned char *contentBuf = new unsigned char[LEN];
+    memcpy(contentBuf, CONTENT.c_str(), LEN);
+    lws_write(wsi, contentBuf, LEN, LWS_WRITE_HTTP);
     delete[] contentBuf;
-
     return -1;
-
   } else if (reason == LWS_CALLBACK_HTTP_BODY) {
     std::string request(static_cast<const char *>(in), len);
     lwsl_notice("HTTP body: '%s'\n", request.c_str());
