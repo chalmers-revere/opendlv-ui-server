@@ -41,6 +41,7 @@ WebsocketServer::WebsocketServer(uint32_t port,
     lws_context_destroy(context);
   }},
   m_outputDataMutex{},
+  m_outputDataBuffer{},
   m_clientCount{0},
   m_port{port}
 {
@@ -51,7 +52,10 @@ WebsocketServer::WebsocketServer(uint32_t port,
   info.gid = -1;
   info.uid = -1;
   info.user = static_cast<void *>(this);
-  
+ 
+  uint32_t const MAX_TX_LENGTH = m_protocols[1].tx_packet_size;
+  m_outputDataBuffer = new unsigned char[MAX_TX_LENGTH + LWS_PRE];
+
   {
     m_context.reset(lws_create_context(&info));
   }
@@ -60,6 +64,7 @@ WebsocketServer::WebsocketServer(uint32_t port,
 }
 
 WebsocketServer::~WebsocketServer() {
+    delete[] m_outputDataBuffer;
 }
 
 int32_t WebsocketServer::callbackHttp(struct lws *wsi, enum lws_callback_reasons reason, void *user, void *in, size_t len) {
@@ -144,12 +149,11 @@ int32_t WebsocketServer::callbackHttp(struct lws *wsi, enum lws_callback_reasons
       return -1;
     }
     
-    std::string header = createHttpHeader(*clientData->httpResponse, sessionId);
-
-    unsigned char *headerBuf = new unsigned char[header.length() + 1];
-    strcpy((char *)headerBuf, header.c_str());
-
-    result = lws_write(wsi, headerBuf, header.length(), LWS_WRITE_HTTP_HEADERS);
+    std::string const HEADER = createHttpHeader(*clientData->httpResponse, sessionId);
+    uint32_t LEN = HEADER.length();
+    unsigned char *headerBuf = new unsigned char[LEN];
+    memcpy(headerBuf, HEADER.c_str(), LEN);
+    result = lws_write(wsi, headerBuf, LEN, LWS_WRITE_HTTP_HEADERS);
     delete[] headerBuf;
 
     if (result < 0) {
@@ -159,16 +163,13 @@ int32_t WebsocketServer::callbackHttp(struct lws *wsi, enum lws_callback_reasons
     lws_callback_on_writable(wsi);
 
   } else if (reason == LWS_CALLBACK_HTTP_WRITEABLE) {
-    std::string content = clientData->httpResponse->getContent() + "\n";
-    
-    unsigned char *contentBuf = new unsigned char[content.length() + 2];
-    strcpy((char *)contentBuf, content.c_str());
-
-    lws_write(wsi, contentBuf, content.length(), LWS_WRITE_HTTP);
+    std::string const CONTENT = clientData->httpResponse->getContent() + "\n";
+    uint32_t const LEN = CONTENT.length();
+    unsigned char *contentBuf = new unsigned char[LEN];
+    memcpy(contentBuf, CONTENT.c_str(), LEN);
+    lws_write(wsi, contentBuf, LEN, LWS_WRITE_HTTP);
     delete[] contentBuf;
-
     return -1;
-
   } else if (reason == LWS_CALLBACK_HTTP_BODY) {
     std::string request(static_cast<const char *>(in), len);
     lwsl_notice("HTTP body: '%s'\n", request.c_str());
@@ -199,12 +200,8 @@ int32_t WebsocketServer::callbackData(struct lws *wsi, enum lws_callback_reasons
     std::string data(static_cast<const char *>(in), len);
     websocketServer->delegateReceivedData(data, *userId);
   } else if (reason == LWS_CALLBACK_SERVER_WRITEABLE) {
-    auto data = websocketServer->getOutputData();
-
-    unsigned char *dataBuf = new unsigned char[data.length() + LWS_PRE];
-    memcpy(dataBuf + LWS_PRE, data.c_str(), data.size());
-    lws_write(wsi, &dataBuf[LWS_PRE], data.length(), LWS_WRITE_BINARY);
-    delete[] dataBuf;
+    std::pair<unsigned char *, size_t> buffer = websocketServer->getOutputDataBuffer();
+    lws_write(wsi, &buffer.first[LWS_PRE], buffer.second, LWS_WRITE_BINARY);
   }
   
   return 0;
@@ -260,9 +257,11 @@ set-cookie: sessionId={{session-id}})";
   return header;
 }
 
-std::string WebsocketServer::getOutputData() {
+std::pair<unsigned char *, size_t> WebsocketServer::getOutputDataBuffer() {
   std::lock_guard<std::mutex> guard(m_outputDataMutex);
-  return m_outputData;
+  size_t const LEN =  m_outputData.length();
+  memcpy(m_outputDataBuffer + LWS_PRE, m_outputData.c_str(), LEN);
+  return std::pair<unsigned char *, size_t>{m_outputDataBuffer, LEN};
 }
 
 uint32_t WebsocketServer::loginUser() {
@@ -283,18 +282,22 @@ void WebsocketServer::sendDataToAllClients(std::string data) {
 
   if (m_context == nullptr) {
     return;
-  } else {
+  }
+  
+  uint32_t const LEN = data.length() + 1;
+  uint32_t const LIMIT = m_protocols[1].tx_packet_size;
+  if (LEN > LIMIT) {
+    std::cerr << "Trying to send to much data (" << LEN << " > " << LIMIT << "). Chunked messages are expensive and not supported." << std::endl;
+    return;
+  }
+  
+  {
     std::lock_guard<std::mutex> guard(m_outputDataMutex);
     m_outputData = data;
   }
 
-  {
-    if (m_context == nullptr) {
-      return;
-    }
-    lws_cancel_service(&(*m_context));
-    lws_callback_on_writable_all_protocol(&(*m_context), &m_protocols[1]);
-  }
+  lws_cancel_service(&(*m_context));
+  lws_callback_on_writable_all_protocol(&(*m_context), &m_protocols[1]);
 }
   
 std::vector<std::string> WebsocketServer::split(std::string const &text, char delimiter) {

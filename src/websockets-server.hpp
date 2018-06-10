@@ -53,7 +53,7 @@ class WebsocketServer {
   void createSessionData(uint16_t);
   void delegateReceivedData(std::string const &, uint32_t) const;
   std::unique_ptr<HttpResponse> delegateRequestedHttp(HttpRequest const &, uint16_t);
-  std::string getOutputData();
+  std::pair<unsigned char *, size_t> getOutputDataBuffer();
   uint32_t loginUser();
 
   static int32_t callbackHttp(struct lws *, enum lws_callback_reasons, void *, void *, size_t);
@@ -63,7 +63,7 @@ class WebsocketServer {
 
   struct lws_protocols m_protocols[3] = {
     {"http-only", &callbackHttp, 32, 0, 0, nullptr, 0},
-    {"od4", &callbackData, sizeof(int32_t), 1024, 0, nullptr, 0},
+    {"od4", &callbackData, sizeof(int32_t), 65535 - LWS_PRE, 0, nullptr, 65535 - LWS_PRE},
     {nullptr, nullptr, 0, 0, 0, nullptr, 0}
   };
 
@@ -75,6 +75,7 @@ class WebsocketServer {
   std::string m_outputData;
   std::unique_ptr<struct lws_context, void(*)(struct lws_context *)> m_context;
   std::mutex m_outputDataMutex;
+  unsigned char *m_outputDataBuffer;
   uint32_t m_clientCount;
   uint32_t m_port;
 };
