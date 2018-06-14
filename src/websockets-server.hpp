@@ -40,19 +40,20 @@ class WebsocketServer {
 
  public:
   WebsocketServer(uint32_t, std::function<std::unique_ptr<HttpResponse>(
-        HttpRequest const &, std::shared_ptr<SessionData>)>,
-      std::function<void(std::string const &, uint32_t)>, std::string, std::string);
+        HttpRequest const &, std::shared_ptr<SessionData>, std::string const &)>,
+      std::function<void(std::string const &, std::string const &, uint32_t)>, 
+      std::string const &, std::string const &);
   WebsocketServer(WebsocketServer const &) = delete;
   WebsocketServer &operator=(WebsocketServer const &) = delete;
   ~WebsocketServer();
   void stepServer();
-  void setDataReceiveDelegate(std::function<void(std::string const &, uint32_t)>);
+  void setDataReceiveDelegate(std::function<void(std::string const &, std::string const &, uint32_t)>);
   void sendDataToAllClients(std::string);
 
  private:
   void createSessionData(uint16_t);
-  void delegateReceivedData(std::string const &, uint32_t) const;
-  std::unique_ptr<HttpResponse> delegateRequestedHttp(HttpRequest const &, uint16_t);
+  void delegateReceivedData(std::string const &, std::string const &, uint32_t) const;
+  std::unique_ptr<HttpResponse> delegateRequestedHttp(HttpRequest const &, std::string const &, uint16_t);
   std::pair<unsigned char *, size_t> getOutputDataBuffer();
   uint32_t loginUser();
 
@@ -67,9 +68,9 @@ class WebsocketServer {
     {nullptr, nullptr, 0, 0, 0, nullptr, 0}
   };
 
-  std::function<void(std::string const &, uint32_t)> m_dataReceiveDelegate;
+  std::function<void(std::string const &, std::string const &, uint32_t)> m_dataReceiveDelegate;
   std::function<std::unique_ptr<HttpResponse>(HttpRequest const &, 
-      std::shared_ptr<SessionData>)> m_httpRequestDelegate;
+      std::shared_ptr<SessionData>, std::string const &)> m_httpRequestDelegate;
 
   std::map<uint16_t, std::shared_ptr<SessionData>> m_sessionData;
   std::string m_outputData;
