@@ -42,12 +42,15 @@ int32_t main(int32_t argc, char **argv)
 
     uint32_t const HTTP_PORT = static_cast<uint32_t>(std::stoi(commandlineArguments["port"]));
     std::string const HTTP_ROOT = commandlineArguments["http-root"];
+    
+    std::string const SSL_CERT_PATH{(commandlineArguments["ssl-cert-path"].size() != 0) ? commandlineArguments["ssl-cert-path"] : ""};
+    std::string const SSL_KEY_PATH{(commandlineArguments["ssl-key-path"].size() != 0) ? commandlineArguments["ssl-key-path"] : ""};
 
     (void)ID;
     (void)VERBOSE;
 
     auto httpRequestDelegate([&HTTP_ROOT](HttpRequest const &httpRequest, 
-          std::shared_ptr<SessionData>) -> std::unique_ptr<HttpResponse>
+          std::shared_ptr<SessionData>, std::string const & /*clientIp*/) -> std::unique_ptr<HttpResponse>
         {
           std::string const PAGE = (httpRequest.getPage() != "/") ? httpRequest.getPage() : std::string("/index.html");
           std::experimental::filesystem::path path{HTTP_ROOT + PAGE};
@@ -83,7 +86,7 @@ int32_t main(int32_t argc, char **argv)
           std::unique_ptr<HttpResponse> response(new HttpResponse(contentType, content));
           return response;
         });
-    WebsocketServer ws(HTTP_PORT, httpRequestDelegate, nullptr);
+    WebsocketServer ws(HTTP_PORT, httpRequestDelegate, nullptr, SSL_CERT_PATH, SSL_KEY_PATH);
 
     auto onIncomingEnvelope([&ws, &VERBOSE](cluon::data::Envelope &&envelope) {
         std::string data = cluon::serializeEnvelope(std::move(envelope));
@@ -94,7 +97,7 @@ int32_t main(int32_t argc, char **argv)
       });    
     cluon::OD4Session od4{CID, onIncomingEnvelope};
 
-    auto dataReceivedDelegate([&od4](std::string const &message, uint32_t /*httpClientId*/) {
+    auto dataReceivedDelegate([&od4](std::string const &message, std::string const & /*clientIp*/, uint32_t /*httpClientId*/) {
         std::stringstream sstr(message);
         while (sstr.good()) {
           auto tmp{cluon::extractEnvelope(sstr)};

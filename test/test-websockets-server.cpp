@@ -33,7 +33,7 @@ TEST_CASE("Test websockets server start and simple connection with GET data.") {
 
   auto httpRequestDelegate([&REQUESTED_PAGE, &GET_KEY1, &GET_VALUE1, 
       &GET_KEY2, &GET_VALUE2](HttpRequest const &httpRequest,
-        std::shared_ptr<SessionData>) -> std::unique_ptr<HttpResponse>
+        std::shared_ptr<SessionData>, std::string const &) -> std::unique_ptr<HttpResponse>
       {
         REQUIRE(REQUESTED_PAGE == httpRequest.getPage()); 
 
@@ -46,7 +46,7 @@ TEST_CASE("Test websockets server start and simple connection with GET data.") {
         return httpResponse;
       });
  
-  WebsocketServer ws(PORT, httpRequestDelegate, nullptr);
+  WebsocketServer ws(PORT, httpRequestDelegate, nullptr, "", "");
 
   bool gotResponse = false;
   auto clientReceiveDelegate([&gotResponse](std::string &&, std::chrono::system_clock::time_point &&) noexcept
@@ -72,13 +72,13 @@ TEST_CASE("Test websockets server start and nullptr return and no GET data.") {
   uint32_t PORT = 8000;
 
   auto httpRequestDelegate([](HttpRequest const &httpRequest,
-        std::shared_ptr<SessionData>) -> std::unique_ptr<HttpResponse>
+        std::shared_ptr<SessionData>, std::string const &) -> std::unique_ptr<HttpResponse>
       {
         REQUIRE(httpRequest.getGetData().size() == 0);
         return nullptr;
       });
  
-  WebsocketServer ws(PORT, httpRequestDelegate, nullptr);
+  WebsocketServer ws(PORT, httpRequestDelegate, nullptr, "", "");
 
   bool gotResponse = false;
   auto clientReceiveDelegate([&gotResponse](std::string &&, std::chrono::system_clock::time_point &&) noexcept

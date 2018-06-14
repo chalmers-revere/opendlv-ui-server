@@ -31,8 +31,9 @@
 
 WebsocketServer::WebsocketServer(uint32_t port,
     std::function<std::unique_ptr<HttpResponse>(HttpRequest const &, 
-      std::shared_ptr<SessionData>)> httpRequestDelegate,
-    std::function<void(std::string const &, uint32_t)> dataReceiveDelegate):
+      std::shared_ptr<SessionData>, std::string const &)> httpRequestDelegate,
+    std::function<void(std::string const &, std::string const &, uint32_t)> dataReceiveDelegate,
+    std::string const &sslCertPath, std::string const &sslKeyPath):
   m_dataReceiveDelegate{dataReceiveDelegate},
   m_httpRequestDelegate{httpRequestDelegate},
   m_sessionData{},
@@ -49,6 +50,11 @@ WebsocketServer::WebsocketServer(uint32_t port,
   memset(&info, 0, sizeof(info));
   info.port = m_port;
   info.protocols = m_protocols;
+  if (!sslCertPath.empty() && !sslKeyPath.empty()) {
+    info.options = LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT;
+    info.ssl_cert_filepath = sslCertPath.c_str();
+    info.ssl_private_key_filepath = sslKeyPath.c_str();
+  }
   info.gid = -1;
   info.uid = -1;
   info.user = static_cast<void *>(this);
@@ -141,9 +147,13 @@ int32_t WebsocketServer::callbackHttp(struct lws *wsi, enum lws_callback_reasons
 			return 0;
     }
 
+    char clientIp[50];
+    lws_get_peer_simple(wsi, clientIp, sizeof(clientIp));
+    std::string clientIpStr(clientIp);
+
     clientData->httpResponse = std::move(
         websocketServer->delegateRequestedHttp(
-          *clientData->httpRequest, sessionId));
+          *clientData->httpRequest, clientIpStr, sessionId));
     if (clientData->httpResponse == nullptr) {
       lws_return_http_status(wsi, HTTP_STATUS_UNSUPPORTED_MEDIA_TYPE, "Unknown request");
       return -1;
@@ -197,8 +207,11 @@ int32_t WebsocketServer::callbackData(struct lws *wsi, enum lws_callback_reasons
     *userId = websocketServer->loginUser();
     
   } else if (reason == LWS_CALLBACK_RECEIVE) {
+    char clientIp[50];
+    lws_get_peer_simple(wsi, clientIp, sizeof(clientIp));
+    std::string clientIpStr(clientIp);
     std::string data(static_cast<const char *>(in), len);
-    websocketServer->delegateReceivedData(data, *userId);
+    websocketServer->delegateReceivedData(data, clientIpStr, *userId);
   } else if (reason == LWS_CALLBACK_SERVER_WRITEABLE) {
     std::pair<unsigned char *, size_t> buffer = websocketServer->getOutputDataBuffer();
     lws_write(wsi, &buffer.first[LWS_PRE], buffer.second, LWS_WRITE_BINARY);
@@ -212,17 +225,17 @@ void WebsocketServer::createSessionData(uint16_t sessionId) {
   m_sessionData[sessionId] = sessionData;
 }
 
-void WebsocketServer::delegateReceivedData(std::string const &message, uint32_t senderId) const {
+void WebsocketServer::delegateReceivedData(std::string const &message, std::string const &clientIp, uint32_t senderId) const {
   if (m_dataReceiveDelegate != nullptr) {
-    m_dataReceiveDelegate(message, senderId);
+    m_dataReceiveDelegate(message, clientIp, senderId);
   }
 }
 
 std::unique_ptr<HttpResponse> WebsocketServer::delegateRequestedHttp(
-    HttpRequest const &request, uint16_t sessionId) {
+    HttpRequest const &request, std::string const &clientIp, uint16_t sessionId) {
   if (m_httpRequestDelegate != nullptr) {
     auto sessionData = m_sessionData[sessionId];
-    auto response = m_httpRequestDelegate(request, sessionData);
+    auto response = m_httpRequestDelegate(request, sessionData, clientIp);
     return response;
   }
 
@@ -274,7 +287,7 @@ void WebsocketServer::stepServer() {
 }
 
 void WebsocketServer::setDataReceiveDelegate(
-    std::function<void(std::string const &, uint32_t)> dataReceiveDelegate) {
+    std::function<void(std::string const &, std::string const &, uint32_t)> dataReceiveDelegate) {
   m_dataReceiveDelegate = dataReceiveDelegate;
 }
 
