@@ -41,7 +41,7 @@ class WebsocketServer {
  public:
   WebsocketServer(uint32_t, std::function<std::unique_ptr<HttpResponse>(
         HttpRequest const &, std::shared_ptr<SessionData>)>,
-      std::function<void(std::string const &, uint32_t)>);
+      std::function<void(std::string const &, uint32_t)>, std::string, std::string);
   WebsocketServer(WebsocketServer const &) = delete;
   WebsocketServer &operator=(WebsocketServer const &) = delete;
   ~WebsocketServer();

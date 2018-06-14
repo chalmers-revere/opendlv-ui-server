@@ -17,7 +17,7 @@ cmake_minimum_required(VERSION 3.2)
 
 project(opendlv-ui-server)
 
-set(CLUON_COMPLETE cluon-complete-v0.0.99.hpp)
+set(CLUON_COMPLETE cluon-complete-v0.0.101.hpp)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

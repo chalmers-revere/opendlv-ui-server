@@ -32,7 +32,8 @@
 WebsocketServer::WebsocketServer(uint32_t port,
     std::function<std::unique_ptr<HttpResponse>(HttpRequest const &, 
       std::shared_ptr<SessionData>)> httpRequestDelegate,
-    std::function<void(std::string const &, uint32_t)> dataReceiveDelegate):
+    std::function<void(std::string const &, uint32_t)> dataReceiveDelegate,
+    std::string sslCertPath, std::string sslKeyPath):
   m_dataReceiveDelegate{dataReceiveDelegate},
   m_httpRequestDelegate{httpRequestDelegate},
   m_sessionData{},
@@ -49,6 +50,11 @@ WebsocketServer::WebsocketServer(uint32_t port,
   memset(&info, 0, sizeof(info));
   info.port = m_port;
   info.protocols = m_protocols;
+  if (!sslCertPath.empty() && !sslKeyPath.empty()) {
+    info.options = LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT;
+    info.ssl_cert_filepath = sslCertPath.c_str();
+    info.ssl_private_key_filepath = sslKeyPath.c_str();
+  }
   info.gid = -1;
   info.uid = -1;
   info.user = static_cast<void *>(this);

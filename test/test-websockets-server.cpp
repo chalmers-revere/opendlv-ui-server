@@ -46,7 +46,7 @@ TEST_CASE("Test websockets server start and simple connection with GET data.") {
         return httpResponse;
       });
  
-  WebsocketServer ws(PORT, httpRequestDelegate, nullptr);
+  WebsocketServer ws(PORT, httpRequestDelegate, nullptr, "", "");
 
   bool gotResponse = false;
   auto clientReceiveDelegate([&gotResponse](std::string &&, std::chrono::system_clock::time_point &&) noexcept
@@ -78,7 +78,7 @@ TEST_CASE("Test websockets server start and nullptr return and no GET data.") {
         return nullptr;
       });
  
-  WebsocketServer ws(PORT, httpRequestDelegate, nullptr);
+  WebsocketServer ws(PORT, httpRequestDelegate, nullptr, "", "");
 
   bool gotResponse = false;
   auto clientReceiveDelegate([&gotResponse](std::string &&, std::chrono::system_clock::time_point &&) noexcept
