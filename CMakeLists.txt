@@ -17,7 +17,7 @@ cmake_minimum_required(VERSION 3.2)
 
 project(opendlv-ui-server)
 
-set(CLUON_COMPLETE cluon-complete-v0.0.101.hpp)
+set(CLUON_COMPLETE cluon-complete-v0.0.110.hpp)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -41,15 +41,13 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} \
     -Wunused-value -Wunused-variable -Wunused-result \
     -Wmissing-field-initializers -Wmissing-format-attribute -Wmissing-include-dirs -Wmissing-noreturn")
 
+add_custom_command(OUTPUT ${CMAKE_BINARY_DIR}/cluon-complete.hpp
+    COMMAND ${CMAKE_COMMAND} -E create_symlink ${CMAKE_CURRENT_SOURCE_DIR}/test/${CLUON_COMPLETE} ${CMAKE_BINARY_DIR}/cluon-complete.hpp
+    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/test/${CLUON_COMPLETE})
+
 include(FindOpenSSL)
 find_package(Threads REQUIRED)
 find_package(Libwebsockets REQUIRED)
-
-add_custom_command(OUTPUT ${CMAKE_BINARY_DIR}/cluon-complete.hpp
-    COMMAND ${CMAKE_COMMAND} -E create_symlink ${CMAKE_CURRENT_SOURCE_DIR}/src/${CLUON_COMPLETE} ${CMAKE_BINARY_DIR}/cluon-complete.hpp
-    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/${CLUON_COMPLETE})
-
-add_custom_target(create-cluon-symlink ${CMAKE_BINARY_DIR}/cluon-complete.hpp)
 
 include_directories(${LIBWEBSOCKETS_INCLUDE_DIRS})
 include_directories(${OPENSSL_INCLUDE_DIR})
@@ -59,24 +57,17 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/src)
 
 set(LIBRARIES ${LIBRARIES} ${LIBWEBSOCKETS_LIBRARIES} ${OPENSSL_LIBRARIES} Threads::Threads stdc++fs)
 
-add_library(${PROJECT_NAME}-core OBJECT 
-  ${CMAKE_BINARY_DIR}/cluon-complete.hpp
+add_library(${PROJECT_NAME} SHARED 
   ${CMAKE_CURRENT_SOURCE_DIR}/src/websockets-server.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/src/http-request.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/src/http-response.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/src/session-data.cpp
   )
 
-add_library(${PROJECT_NAME}-static STATIC $<TARGET_OBJECTS:${PROJECT_NAME}-core>) 
-
-add_executable(${PROJECT_NAME} ${CMAKE_CURRENT_SOURCE_DIR}/src/${PROJECT_NAME}.cpp $<TARGET_OBJECTS:${PROJECT_NAME}-core>)
-target_link_libraries(${PROJECT_NAME} ${LIBRARIES})
-
 enable_testing()
-add_executable(${PROJECT_NAME}-runner ${CMAKE_CURRENT_SOURCE_DIR}/test/test-websockets-server.cpp $<TARGET_OBJECTS:${PROJECT_NAME}-core>)
-target_link_libraries(${PROJECT_NAME}-runner ${LIBRARIES})
+add_executable(${PROJECT_NAME}-runner ${CMAKE_CURRENT_SOURCE_DIR}/test/test-websockets-server.cpp ${CMAKE_BINARY_DIR}/cluon-complete.hpp)
+target_link_libraries(${PROJECT_NAME}-runner ${PROJECT_NAME} ${LIBRARIES})
 add_test(NAME ${PROJECT_NAME}-runner COMMAND ${PROJECT_NAME}-runner)
 
-install(TARGETS ${PROJECT_NAME} RUNTIME DESTINATION bin COMPONENT ${PROJECT_NAME})
-install(TARGETS ${PROJECT_NAME}-static DESTINATION lib COMPONENT ${CMAKE_PROJECT_NAME})
-install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/src/http-request.hpp ${CMAKE_CURRENT_SOURCE_DIR}/src/http-response.hpp ${CMAKE_CURRENT_SOURCE_DIR}/src/session-data.hpp ${CMAKE_CURRENT_SOURCE_DIR}/src/websockets-server.hpp DESTINATION include/${PROJECT_NAME} COMPONENT ${CMAKE_PROJECT_NAME})
+install(TARGETS ${PROJECT_NAME} DESTINATION lib)
+install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/src/http-request.hpp ${CMAKE_CURRENT_SOURCE_DIR}/src/http-response.hpp ${CMAKE_CURRENT_SOURCE_DIR}/src/session-data.hpp ${CMAKE_CURRENT_SOURCE_DIR}/src/websockets-server.hpp DESTINATION include/${PROJECT_NAME})

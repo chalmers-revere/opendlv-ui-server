@@ -60,6 +60,5 @@ RUN apk update && \
 
 WORKDIR /usr/bin
 COPY --from=builder /tmp/opendlv-ui-server-dest/ /usr/
-CMD ["/usr/bin/opendlv-ui-server"]
 
 RUN [ "cross-build-end" ]
