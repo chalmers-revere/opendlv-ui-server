@@ -55,7 +55,7 @@ include_directories(SYSTEM ${CMAKE_BINARY_DIR})
 include_directories(SYSTEM ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/src)
 
-set(LIBRARIES ${LIBRARIES} ${LIBWEBSOCKETS_LIBRARIES} ${OPENSSL_LIBRARIES} Threads::Threads stdc++fs)
+set(LIBRARIES ${LIBRARIES} ${LIBWEBSOCKETS_LIBRARIES} ${OPENSSL_LIBRARIES} Threads::Threads)
 
 add_library(${PROJECT_NAME} SHARED 
   ${CMAKE_CURRENT_SOURCE_DIR}/src/websockets-server.cpp
