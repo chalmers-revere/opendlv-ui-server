@@ -57,17 +57,25 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/src)
 
 set(LIBRARIES ${LIBRARIES} ${LIBWEBSOCKETS_LIBRARIES} ${OPENSSL_LIBRARIES} Threads::Threads)
 
-add_library(${PROJECT_NAME} SHARED 
-  ${CMAKE_CURRENT_SOURCE_DIR}/src/websockets-server.cpp
+add_library(${PROJECT_NAME}-objects OBJECT ${CMAKE_CURRENT_SOURCE_DIR}/src/${PROJECT_NAME}.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/src/http-request.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/src/http-response.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/src/session-data.cpp
   )
+set_target_properties(${PROJECT_NAME}-objects PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
+add_library(${PROJECT_NAME}-static STATIC $<TARGET_OBJECTS:${PROJECT_NAME}-objects>)
+set_target_properties(${PROJECT_NAME}-static PROPERTIES OUTPUT_NAME ${PROJECT_NAME})
+
+add_library(${PROJECT_NAME}-shared SHARED $<TARGET_OBJECTS:${PROJECT_NAME}-objects>)
+set_target_properties(${PROJECT_NAME}-shared PROPERTIES OUTPUT_NAME ${PROJECT_NAME})
 
 enable_testing()
-add_executable(${PROJECT_NAME}-runner ${CMAKE_CURRENT_SOURCE_DIR}/test/test-websockets-server.cpp ${CMAKE_BINARY_DIR}/cluon-complete.hpp)
-target_link_libraries(${PROJECT_NAME}-runner ${PROJECT_NAME} ${LIBRARIES})
+add_executable(${PROJECT_NAME}-runner ${CMAKE_CURRENT_SOURCE_DIR}/test/test-${PROJECT_NAME}.cpp ${CMAKE_BINARY_DIR}/cluon-complete.hpp)
+target_link_libraries(${PROJECT_NAME}-runner ${PROJECT_NAME}-shared ${LIBRARIES})
 add_test(NAME ${PROJECT_NAME}-runner COMMAND ${PROJECT_NAME}-runner)
 
-install(TARGETS ${PROJECT_NAME} DESTINATION lib)
-install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/src/http-request.hpp ${CMAKE_CURRENT_SOURCE_DIR}/src/http-response.hpp ${CMAKE_CURRENT_SOURCE_DIR}/src/session-data.hpp ${CMAKE_CURRENT_SOURCE_DIR}/src/websockets-server.hpp DESTINATION include/${PROJECT_NAME})
+install(TARGETS ${PROJECT_NAME}-static DESTINATION lib)
+install(TARGETS ${PROJECT_NAME}-shared DESTINATION lib)
+install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/src/http-request.hpp ${CMAKE_CURRENT_SOURCE_DIR}/src/http-response.hpp ${CMAKE_CURRENT_SOURCE_DIR}/src/session-data.hpp ${CMAKE_CURRENT_SOURCE_DIR}/src/${PROJECT_NAME}.hpp DESTINATION include/${PROJECT_NAME})
+install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/${PROJECT_NAME}-config.cmake DESTINATION lib/${CMAKE_LIBRARY_ARCHITECTURE}/cmake/${PROJECT_NAME})

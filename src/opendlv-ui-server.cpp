@@ -25,7 +25,7 @@
 #include "http-request.hpp"
 #include "http-response.hpp"
 #include "session-data.hpp"
-#include "websockets-server.hpp"
+#include "opendlv-ui-server.hpp"
 #include "mustache.hpp"
 
 WebsocketServer::WebsocketServer(uint32_t port,

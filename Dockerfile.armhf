@@ -1,4 +1,4 @@
-# Copyright (C) 2018  Christian Berger
+# Copyright (C) 2018 Ola Benderius
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -28,11 +28,11 @@ RUN apk update && \
         cmake \
         g++ \
         make \
-        openssl-dev \
-        git
+        openssl \
+        openssl-dev
         
 # The Alpine libwebsockets does not work (it needs openssl 1.1 apparently). Let's compile it.
-RUN cd /tmp && git clone https://github.com/warmcat/libwebsockets && cd libwebsockets && git checkout v2.4-stable && mkdir build && cd build && cmake .. && make && make install
+RUN cd /tmp && wget https://github.com/warmcat/libwebsockets/archive/v3.0.1.tar.gz && tar -zxvf v3.0.1.tar.gz && cd libwebsockets-3.0.1 && mkdir build && cd build && cmake .. && make && make install
         
 ADD . /opt/sources
 WORKDIR /opt/sources
@@ -56,9 +56,10 @@ RUN cat /etc/apk/repositories && \
 
 RUN apk update && \
     apk --no-cache add \
-        openssl
+        openssl-dev
 
 WORKDIR /usr/bin
 COPY --from=builder /tmp/opendlv-ui-server-dest/ /usr/
+COPY --from=builder /usr/local /usr
 
 RUN [ "cross-build-end" ]
