@@ -1,4 +1,4 @@
-# Copyright (C) 2018  Christian Berger
+# Copyright (C) 2018 Ola Benderius
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -14,36 +14,34 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 # Part to build opendlv-ui-server.
-FROM alpine:3.7 as builder
+FROM alpine:3.8 as builder
 MAINTAINER Ola Benderius "ola.benderius@chalmers.se"
 RUN apk update && \
     apk --no-cache add \
         cmake \
         g++ \
         make \
-        upx \
+        openssl \
         openssl-dev
-        
+ 
 # The Alpine libwebsockets does not work (it needs openssl 1.1 apparently). Let's compile it.
-RUN cd /tmp && wget https://github.com/warmcat/libwebsockets/archive/v2.4.1.tar.gz && tar -zxvf v2.4.1.tar.gz && cd libwebsockets-2.4.1 && mkdir build && cd build && cmake .. && make && make install
-        
+RUN cd /tmp && wget https://github.com/warmcat/libwebsockets/archive/v3.0.1.tar.gz && tar -zxvf v3.0.1.tar.gz && cd libwebsockets-3.0.1 && mkdir build && cd build && cmake .. && make && make install
+
 ADD . /opt/sources
 WORKDIR /opt/sources
 RUN mkdir build && \
     cd build && \
     cmake -D CMAKE_BUILD_TYPE=Release -D CMAKE_INSTALL_PREFIX=/tmp/opendlv-ui-server-dest .. && \
-    make && make test && make install && upx -9 /tmp/opendlv-ui-server-dest/bin/opendlv-ui-server
+    make && make test && make install
 
 
 # Part to deploy opendlv-ui-server.
-FROM alpine:3.7
+FROM alpine:3.8
 MAINTAINER Ola Benderius "ola.benderius@chalmers.se"
 RUN apk update && \
     apk --no-cache add \
-        openssl
+        openssl-dev
 
 WORKDIR /usr/bin
 COPY --from=builder /tmp/opendlv-ui-server-dest /usr
-CMD ["/usr/bin/opendlv-ui-server"]
-
-
+COPY --from=builder /usr/local /usr

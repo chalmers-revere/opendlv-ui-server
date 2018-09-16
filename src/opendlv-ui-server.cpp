@@ -15,105 +15,310 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <experimental/filesystem>
-#include <fstream>
-#include <iostream>
-#include <sstream>
 
-#include "cluon-complete.hpp"
+#include <chrono>
+#include <cstring>
+#include <iostream>
+#include <limits>
+#include <random>
+
 #include "http-request.hpp"
 #include "http-response.hpp"
 #include "session-data.hpp"
-#include "websockets-server.hpp"
+#include "opendlv-ui-server.hpp"
+#include "mustache.hpp"
 
-int32_t main(int32_t argc, char **argv)
+WebsocketServer::WebsocketServer(uint32_t port,
+    std::function<std::unique_ptr<HttpResponse>(HttpRequest const &, 
+      std::shared_ptr<SessionData>, std::string const &)> httpRequestDelegate,
+    std::function<void(std::string const &, std::string const &, uint32_t)> dataReceiveDelegate,
+    std::string const &sslCertPath, std::string const &sslKeyPath):
+  m_dataReceiveDelegate{dataReceiveDelegate},
+  m_httpRequestDelegate{httpRequestDelegate},
+  m_sessionData{},
+  m_outputData{},
+  m_context{nullptr, [](struct lws_context *context) {
+    lws_context_destroy(context);
+  }},
+  m_outputDataMutex{},
+  m_outputDataBuffer{},
+  m_clientCount{0},
+  m_port{port}
 {
-  int32_t retCode{0};
-  auto commandlineArguments = cluon::getCommandlineArguments(argc, argv);
-  if (0 == commandlineArguments.count("cid") || 0 == commandlineArguments.count("port") || 0 == commandlineArguments.count("http-root")) {
-    std::cerr << argv[0] << " is the default HTTP/WebSocket server for OpenDLV user interfaces." << std::endl;
-    std::cerr << "Usage:   " << argv[0] << " --cid=<OpenDaVINCI session> --port=<the port where HTTP/WebSocket is served> --http-root=<folder where HTTP content can be found> [--id=<Identifier in case of multiple running instances>] [--verbose]" << std::endl;
-    std::cerr << "Example: " << argv[0] << " --cid=111 --port=8000 --http-root=./http" << std::endl;
-    retCode = 1;
-  } else {
-    uint32_t const ID{(commandlineArguments["id"].size() != 0) ? static_cast<uint32_t>(std::stoi(commandlineArguments["id"])) : 0};
-    bool const VERBOSE{commandlineArguments.count("verbose") != 0};
-    uint16_t const CID = static_cast<uint16_t>(std::stoi(commandlineArguments["cid"]));
-
-    uint32_t const HTTP_PORT = static_cast<uint32_t>(std::stoi(commandlineArguments["port"]));
-    std::string const HTTP_ROOT = commandlineArguments["http-root"];
-    
-    std::string const SSL_CERT_PATH{(commandlineArguments["ssl-cert-path"].size() != 0) ? commandlineArguments["ssl-cert-path"] : ""};
-    std::string const SSL_KEY_PATH{(commandlineArguments["ssl-key-path"].size() != 0) ? commandlineArguments["ssl-key-path"] : ""};
-
-    (void)ID;
-    (void)VERBOSE;
-
-    auto httpRequestDelegate([&HTTP_ROOT](HttpRequest const &httpRequest, 
-          std::shared_ptr<SessionData>, std::string const & /*clientIp*/) -> std::unique_ptr<HttpResponse>
-        {
-          std::string const PAGE = (httpRequest.getPage() != "/") ? httpRequest.getPage() : std::string("/index.html");
-          std::experimental::filesystem::path path{HTTP_ROOT + PAGE};
-
-          if (!std::experimental::filesystem::exists(path)) {
-            std::cout << "ERROR: file '" << path.string() <<  "' not found." << std::endl;
-            return nullptr;
-          }
-          
-          std::ifstream ifs(path.string());
-          std::stringstream ss;
-          ss << ifs.rdbuf();
-          std::string content = ss.str();
-
-          std::string contentType;
-          std::string const EXTENSION = path.extension();
-          if (EXTENSION == ".html") {
-            contentType = "text/html";
-          } else if (EXTENSION == ".css") {
-            contentType = "text/css";
-          } else if (EXTENSION == ".js") {
-            contentType = "text/javascript";
-          } else if (EXTENSION == ".gif") {
-            contentType = "image/gif";
-          } else if (EXTENSION == ".png") {
-            contentType = "image/png";
-          } else if (EXTENSION == ".jpeg" || EXTENSION == ".jpg") {
-            contentType = "image/jpeg";
-          } else {
-            contentType = "text/plain";
-          }
-
-          std::unique_ptr<HttpResponse> response(new HttpResponse(contentType, content));
-          return response;
-        });
-    WebsocketServer ws(HTTP_PORT, httpRequestDelegate, nullptr, SSL_CERT_PATH, SSL_KEY_PATH);
-
-    auto onIncomingEnvelope([&ws, &VERBOSE](cluon::data::Envelope &&envelope) {
-        std::string data = cluon::serializeEnvelope(std::move(envelope));
-        ws.sendDataToAllClients(data);
-        if (VERBOSE) {
-          std::cout << "Sending message " << envelope.dataType() << " (" << data.size() << " bytes) to all websocket clients." << std::endl;
-        }
-      });    
-    cluon::OD4Session od4{CID, onIncomingEnvelope};
-
-    auto dataReceivedDelegate([&od4](std::string const &message, std::string const & /*clientIp*/, uint32_t /*httpClientId*/) {
-        std::stringstream sstr(message);
-        while (sstr.good()) {
-          auto tmp{cluon::extractEnvelope(sstr)};
-          if (tmp.first) {
-            cluon::data::Envelope env{tmp.second};
-            env.sent(cluon::time::now());
-            env.sampleTimeStamp(cluon::time::now());
-            od4.send(std::move(env));
-          }
-        }
-      });
-    ws.setDataReceiveDelegate(dataReceivedDelegate);
-
-    while (od4.isRunning()) {
-      ws.stepServer();
-    }
+  struct lws_context_creation_info info;
+  memset(&info, 0, sizeof(info));
+  info.port = m_port;
+  info.protocols = m_protocols;
+  if (!sslCertPath.empty() && !sslKeyPath.empty()) {
+    info.options = LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT;
+    info.ssl_cert_filepath = sslCertPath.c_str();
+    info.ssl_private_key_filepath = sslKeyPath.c_str();
   }
-  return retCode;
+  info.gid = -1;
+  info.uid = -1;
+  info.user = static_cast<void *>(this);
+ 
+  uint32_t const MAX_TX_LENGTH = m_protocols[1].tx_packet_size;
+  m_outputDataBuffer = new unsigned char[MAX_TX_LENGTH + LWS_PRE];
+
+  {
+    m_context.reset(lws_create_context(&info));
+  }
+
+  lws_set_log_level(7, nullptr);
+}
+
+WebsocketServer::~WebsocketServer() {
+    delete[] m_outputDataBuffer;
+}
+
+int32_t WebsocketServer::callbackHttp(struct lws *wsi, enum lws_callback_reasons reason, void *user, void *in, size_t len) {
+
+  WebsocketServer *websocketServer = 
+    reinterpret_cast<WebsocketServer *>(lws_context_user(lws_get_context(wsi)));
+  
+  ClientData *clientData = static_cast<ClientData *>(user);
+
+  if (reason == LWS_CALLBACK_HTTP) {
+
+    if (len < 1) {
+			lws_return_http_status(wsi, HTTP_STATUS_BAD_REQUEST, nullptr);
+			if (lws_http_transaction_completed(wsi)) {
+        return -1;
+      }
+    }
+
+    char buf[256];
+
+    std::string page(static_cast<const char *>(in), len);
+    std::map<std::string, std::string> cookies;
+    
+    // Extract cookies from the header, to find any sessionId.
+    if (lws_hdr_copy(wsi, buf, sizeof(buf), WSI_TOKEN_HTTP_COOKIE) > 0) {
+      std::string cookiesStr(buf);
+
+      for (auto cookieStr : split(cookiesStr, ';')) {
+        std::vector<std::string> cookie = split(cookiesStr, '=');
+        if (cookie.size() == 2) {
+          cookies[cookie[0]] = cookie[1];
+        }
+      }
+    }
+
+    uint16_t sessionId;
+    if (cookies.count("sessionId") != 0) {
+      sessionId = std::stoi(cookies["sessionId"]);
+    } else {
+      // Unknown user (no cookie from client) generate and add new session id.
+      std::mt19937 rng;
+      rng.seed(std::random_device()());
+      std::uniform_int_distribution<std::mt19937::result_type> dist(
+          std::numeric_limits<decltype(sessionId)>::min(),
+          std::numeric_limits<decltype(sessionId)>::max());
+      sessionId = dist(rng);
+
+      websocketServer->createSessionData(sessionId);
+    }
+    
+    // Extract GET data from the HTTP request.
+    std::map<std::string, std::string> getData;
+    uint32_t n = 0;
+    while (lws_hdr_copy_fragment(wsi, buf, sizeof(buf), WSI_TOKEN_HTTP_URI_ARGS, n) > 0) {
+      std::string getDataStr(buf);
+      std::vector<std::string> getDataVec = split(getDataStr, '=');
+      if (getDataVec.size() == 2) {
+        getData[getDataVec[0]] = getDataVec[1];
+      }
+      n++;
+    }
+    
+    clientData->httpRequest = std::unique_ptr<HttpRequest>(
+        new HttpRequest(getData, page));
+    clientData->sessionId = sessionId;
+   
+    // If POST URL, continue to accept data.
+    int32_t result;
+    if (lws_hdr_total_length(wsi, WSI_TOKEN_POST_URI)) {
+			result = lws_hdr_copy(wsi, buf, sizeof(buf), WSI_TOKEN_POST_URI);
+			if (result < 0) {
+				return -1;
+      }
+			return 0;
+    }
+
+    char clientIp[50];
+    lws_get_peer_simple(wsi, clientIp, sizeof(clientIp));
+    std::string clientIpStr(clientIp);
+
+    clientData->httpResponse = std::move(
+        websocketServer->delegateRequestedHttp(
+          *clientData->httpRequest, clientIpStr, sessionId));
+    if (clientData->httpResponse == nullptr) {
+      lws_return_http_status(wsi, HTTP_STATUS_UNSUPPORTED_MEDIA_TYPE, "Unknown request");
+      return -1;
+    }
+    
+    std::string const HEADER = createHttpHeader(*clientData->httpResponse, sessionId);
+    uint32_t LEN = HEADER.length();
+    unsigned char *headerBuf = new unsigned char[LEN];
+    memcpy(headerBuf, HEADER.c_str(), LEN);
+    result = lws_write(wsi, headerBuf, LEN, LWS_WRITE_HTTP_HEADERS);
+    delete[] headerBuf;
+
+    if (result < 0) {
+      return -1;
+    }
+
+    lws_callback_on_writable(wsi);
+
+  } else if (reason == LWS_CALLBACK_HTTP_WRITEABLE) {
+    std::string const CONTENT = clientData->httpResponse->getContent() + "\n";
+    uint32_t const LEN = CONTENT.length();
+    unsigned char *contentBuf = new unsigned char[LEN];
+    memcpy(contentBuf, CONTENT.c_str(), LEN);
+    lws_write(wsi, contentBuf, LEN, LWS_WRITE_HTTP);
+    delete[] contentBuf;
+    return -1;
+  } else if (reason == LWS_CALLBACK_HTTP_BODY) {
+    std::string request(static_cast<const char *>(in), len);
+    lwsl_notice("HTTP body: '%s'\n", request.c_str());
+  } else if (reason == LWS_CALLBACK_HTTP_DROP_PROTOCOL) {
+ /*   if (clientData->httpRequest != nullptr) {
+      delete clientData->httpRequest;
+    }
+    if (clientData->httpResponse != nullptr) {
+      delete clientData->httpResponse;
+    }*/
+  } else if (reason == LWS_CALLBACK_HTTP_FILE_COMPLETION) {
+    return -1;
+  }
+  
+  return 0;
+}
+
+int32_t WebsocketServer::callbackData(struct lws *wsi, enum lws_callback_reasons reason, void *user, void *in, size_t len) {
+
+  WebsocketServer *websocketServer =
+      reinterpret_cast<WebsocketServer *>(lws_context_user(lws_get_context(wsi)));
+    
+  int32_t *userId = static_cast<int32_t *>(user);
+  if (reason == LWS_CALLBACK_ESTABLISHED) {
+    *userId = websocketServer->loginUser();
+    
+  } else if (reason == LWS_CALLBACK_RECEIVE) {
+    char clientIp[50];
+    lws_get_peer_simple(wsi, clientIp, sizeof(clientIp));
+    std::string clientIpStr(clientIp);
+    std::string data(static_cast<const char *>(in), len);
+    websocketServer->delegateReceivedData(data, clientIpStr, *userId);
+  } else if (reason == LWS_CALLBACK_SERVER_WRITEABLE) {
+    std::pair<unsigned char *, size_t> buffer = websocketServer->getOutputDataBuffer();
+    lws_write(wsi, &buffer.first[LWS_PRE], buffer.second, LWS_WRITE_BINARY);
+  }
+  
+  return 0;
+}
+
+void WebsocketServer::createSessionData(uint16_t sessionId) {
+  std::shared_ptr<SessionData> sessionData(new SessionData(sessionId));
+  m_sessionData[sessionId] = sessionData;
+}
+
+void WebsocketServer::delegateReceivedData(std::string const &message, std::string const &clientIp, uint32_t senderId) const {
+  if (m_dataReceiveDelegate != nullptr) {
+    m_dataReceiveDelegate(message, clientIp, senderId);
+  }
+}
+
+std::unique_ptr<HttpResponse> WebsocketServer::delegateRequestedHttp(
+    HttpRequest const &request, std::string const &clientIp, uint16_t sessionId) {
+  if (m_httpRequestDelegate != nullptr) {
+    auto sessionData = m_sessionData[sessionId];
+    auto response = m_httpRequestDelegate(request, sessionData, clientIp);
+    return response;
+  }
+
+  return nullptr;
+}
+
+std::string WebsocketServer::createHttpHeader(HttpResponse const &response, uint16_t sessionId) {
+
+  std::string contentType = response.getContentType();
+  int32_t contentLength = response.getContent().length();
+
+  char const *headerTemplate = 
+R"(HTTP/1.1 200 OK
+content-type: {{content-type}}
+accept-ranges: bytes
+content-length: {{content-length}}
+cache-control: no-store
+connection: keep-alive
+set-cookie: sessionId={{session-id}})";
+
+  kainjow::mustache::data dataToBeRendered;
+  dataToBeRendered.set("content-type", contentType);
+  dataToBeRendered.set("content-length", std::to_string(contentLength + 1));
+  dataToBeRendered.set("session-id", std::to_string(sessionId));
+
+  kainjow::mustache::mustache tmpl{headerTemplate};
+  
+  std::stringstream sstr;
+  sstr << tmpl.render(dataToBeRendered);
+  std::string const header(sstr.str() + "\n\n");
+
+  return header;
+}
+
+std::pair<unsigned char *, size_t> WebsocketServer::getOutputDataBuffer() {
+  std::lock_guard<std::mutex> guard(m_outputDataMutex);
+  size_t const LEN =  m_outputData.length();
+  memcpy(m_outputDataBuffer + LWS_PRE, m_outputData.c_str(), LEN);
+  return std::pair<unsigned char *, size_t>{m_outputDataBuffer, LEN};
+}
+
+uint32_t WebsocketServer::loginUser() {
+  m_clientCount++;
+  return m_clientCount;
+}
+
+void WebsocketServer::stepServer() {
+  lws_service(&(*m_context), 10000);
+}
+
+void WebsocketServer::setDataReceiveDelegate(
+    std::function<void(std::string const &, std::string const &, uint32_t)> dataReceiveDelegate) {
+  m_dataReceiveDelegate = dataReceiveDelegate;
+}
+
+void WebsocketServer::sendDataToAllClients(std::string data) {
+
+  if (m_context == nullptr) {
+    return;
+  }
+  
+  uint32_t const LEN = data.length() + 1;
+  uint32_t const LIMIT = m_protocols[1].tx_packet_size;
+  if (LEN > LIMIT) {
+    std::cerr << "Trying to send to much data (" << LEN << " > " << LIMIT << "). Chunked messages are expensive and not supported." << std::endl;
+    return;
+  }
+  
+  {
+    std::lock_guard<std::mutex> guard(m_outputDataMutex);
+    m_outputData = data;
+  }
+
+  lws_cancel_service(&(*m_context));
+  lws_callback_on_writable_all_protocol(&(*m_context), &m_protocols[1]);
+}
+  
+std::vector<std::string> WebsocketServer::split(std::string const &text, char delimiter) {
+  std::vector<std::string> tokens;
+  std::size_t start = 0, end = 0;
+  while ((end = text.find(delimiter, start)) != std::string::npos) {
+    tokens.push_back(text.substr(start, end - start));
+    start = end + 1;
+  }
+  tokens.push_back(text.substr(start));
+  return tokens;
 }

@@ -21,7 +21,7 @@
 #include "cluon-complete.hpp"
 #include "http-request.hpp"
 #include "http-response.hpp"
-#include "websockets-server.hpp"
+#include "opendlv-ui-server.hpp"
 
 TEST_CASE("Test websockets server start and simple connection with GET data.") {
   std::string const REQUESTED_PAGE = "/testpage.html";
