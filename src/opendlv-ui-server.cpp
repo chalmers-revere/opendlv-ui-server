@@ -43,7 +43,8 @@ WebsocketServer::WebsocketServer(uint32_t port,
   m_outputDataMutex{},
   m_outputDataBuffer{},
   m_clientCount{0},
-  m_port{port}
+  m_port{port},
+  m_outputDataSenderUserId{-1}
 {
   struct lws_context_creation_info info;
   memset(&info, 0, sizeof(info));
@@ -68,12 +69,13 @@ WebsocketServer::WebsocketServer(uint32_t port,
   lws_set_log_level(7, nullptr);
 }
 
-WebsocketServer::~WebsocketServer() {
+WebsocketServer::~WebsocketServer()
+{
     delete[] m_outputDataBuffer;
 }
 
-int32_t WebsocketServer::callbackHttp(struct lws *wsi, enum lws_callback_reasons reason, void *user, void *in, size_t len) {
-
+int32_t WebsocketServer::callbackHttp(struct lws *wsi, enum lws_callback_reasons reason, void *user, void *in, size_t len)
+{
   WebsocketServer *websocketServer = 
     reinterpret_cast<WebsocketServer *>(lws_context_user(lws_get_context(wsi)));
   
@@ -196,8 +198,8 @@ int32_t WebsocketServer::callbackHttp(struct lws *wsi, enum lws_callback_reasons
   return 0;
 }
 
-int32_t WebsocketServer::callbackData(struct lws *wsi, enum lws_callback_reasons reason, void *user, void *in, size_t len) {
-
+int32_t WebsocketServer::callbackData(struct lws *wsi, enum lws_callback_reasons reason, void *user, void *in, size_t len)
+{
   WebsocketServer *websocketServer =
       reinterpret_cast<WebsocketServer *>(lws_context_user(lws_get_context(wsi)));
     
@@ -212,26 +214,31 @@ int32_t WebsocketServer::callbackData(struct lws *wsi, enum lws_callback_reasons
     std::string data(static_cast<const char *>(in), len);
     websocketServer->delegateReceivedData(data, clientIpStr, *userId);
   } else if (reason == LWS_CALLBACK_SERVER_WRITEABLE) {
-    std::pair<unsigned char *, size_t> buffer = websocketServer->getOutputDataBuffer();
-    lws_write(wsi, &buffer.first[LWS_PRE], buffer.second, LWS_WRITE_BINARY);
+    if (websocketServer->getOutputDataSenderUserId() != *userId) {
+      std::pair<unsigned char *, size_t> buffer = websocketServer->getOutputDataBuffer();
+      lws_write(wsi, &buffer.first[LWS_PRE], buffer.second, LWS_WRITE_BINARY);
+    }
   }
   
   return 0;
 }
 
-void WebsocketServer::createSessionData(uint16_t sessionId) {
+void WebsocketServer::createSessionData(uint16_t sessionId)
+{
   std::shared_ptr<SessionData> sessionData(new SessionData(sessionId));
   m_sessionData[sessionId] = sessionData;
 }
 
-void WebsocketServer::delegateReceivedData(std::string const &message, std::string const &clientIp, uint32_t senderId) const {
+void WebsocketServer::delegateReceivedData(std::string const &message, std::string const &clientIp, uint32_t senderId) const
+{
   if (m_dataReceiveDelegate != nullptr) {
     m_dataReceiveDelegate(message, clientIp, senderId);
   }
 }
 
 std::unique_ptr<HttpResponse> WebsocketServer::delegateRequestedHttp(
-    HttpRequest const &request, std::string const &clientIp, uint16_t sessionId) {
+    HttpRequest const &request, std::string const &clientIp, uint16_t sessionId)
+{
   if (m_httpRequestDelegate != nullptr) {
     auto sessionData = m_sessionData[sessionId];
     auto response = m_httpRequestDelegate(request, sessionData, clientIp);
@@ -241,8 +248,8 @@ std::unique_ptr<HttpResponse> WebsocketServer::delegateRequestedHttp(
   return nullptr;
 }
 
-std::string WebsocketServer::createHttpHeader(HttpResponse const &response, uint16_t sessionId) {
-
+std::string WebsocketServer::createHttpHeader(HttpResponse const &response, uint16_t sessionId)
+{
   std::string contentType = response.getContentType();
   int32_t contentLength = response.getContent().length();
 
@@ -269,28 +276,44 @@ set-cookie: sessionId={{session-id}})";
   return header;
 }
 
-std::pair<unsigned char *, size_t> WebsocketServer::getOutputDataBuffer() {
+std::pair<unsigned char *, size_t> WebsocketServer::getOutputDataBuffer()
+{
   std::lock_guard<std::mutex> guard(m_outputDataMutex);
   size_t const LEN =  m_outputData.length();
   memcpy(m_outputDataBuffer + LWS_PRE, m_outputData.c_str(), LEN);
   return std::pair<unsigned char *, size_t>{m_outputDataBuffer, LEN};
 }
+  
+int32_t WebsocketServer::getOutputDataSenderUserId() const
+{
+  return m_outputDataSenderUserId;
+}
 
-uint32_t WebsocketServer::loginUser() {
+uint32_t WebsocketServer::loginUser()
+{
   m_clientCount++;
   return m_clientCount;
 }
 
-void WebsocketServer::stepServer() {
+void WebsocketServer::stepServer()
+{
   lws_service(&(*m_context), 10000);
 }
 
 void WebsocketServer::setDataReceiveDelegate(
-    std::function<void(std::string const &, std::string const &, uint32_t)> dataReceiveDelegate) {
+    std::function<void(std::string const &, std::string const &, uint32_t)> dataReceiveDelegate)
+{
   m_dataReceiveDelegate = dataReceiveDelegate;
 }
 
-void WebsocketServer::sendDataToAllClients(std::string data) {
+void WebsocketServer::sendDataToAllClients(std::string data)
+{
+  sendDataToAllOtherClients(data, -1);
+}
+
+void WebsocketServer::sendDataToAllOtherClients(std::string data, int32_t senderUserId)
+{
+  m_outputDataSenderUserId = senderUserId;
 
   if (m_context == nullptr) {
     return;
@@ -312,7 +335,8 @@ void WebsocketServer::sendDataToAllClients(std::string data) {
   lws_callback_on_writable_all_protocol(&(*m_context), &m_protocols[1]);
 }
   
-std::vector<std::string> WebsocketServer::split(std::string const &text, char delimiter) {
+std::vector<std::string> WebsocketServer::split(std::string const &text, char delimiter)
+{
   std::vector<std::string> tokens;
   std::size_t start = 0, end = 0;
   while ((end = text.find(delimiter, start)) != std::string::npos) {

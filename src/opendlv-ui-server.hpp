@@ -49,12 +49,14 @@ class WebsocketServer {
   void stepServer();
   void setDataReceiveDelegate(std::function<void(std::string const &, std::string const &, uint32_t)>);
   void sendDataToAllClients(std::string);
+  void sendDataToAllOtherClients(std::string, int32_t);
 
  private:
   void createSessionData(uint16_t);
   void delegateReceivedData(std::string const &, std::string const &, uint32_t) const;
   std::unique_ptr<HttpResponse> delegateRequestedHttp(HttpRequest const &, std::string const &, uint16_t);
   std::pair<unsigned char *, size_t> getOutputDataBuffer();
+  int32_t getOutputDataSenderUserId() const;
   uint32_t loginUser();
 
   static int32_t callbackHttp(struct lws *, enum lws_callback_reasons, void *, void *, size_t);
@@ -79,6 +81,7 @@ class WebsocketServer {
   unsigned char *m_outputDataBuffer;
   uint32_t m_clientCount;
   uint32_t m_port;
+  int32_t m_outputDataSenderUserId;
 };
 
 #endif
